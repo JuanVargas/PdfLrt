@@ -12,3 +12,11 @@ Click the Publish to Github btn
 Issue commit and commit and push
 
 Verify that repo is in Github
+
+
+Once the repo is in Github, use these commands to update
+
+git add .
+git commit -m "Describe your changes here"
+git push
+
