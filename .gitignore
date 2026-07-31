@@ -1,0 +1,25 @@
+# Model assets (downloaded from GitHub Releases)
+models/
+
+# SSL Certificates (regenerated on startup)
+ca.key
+ca.pem
+cert.pem
+key.pem
+
+# Compiled Go binaries
+pdflrt
+pdflrt.exe
+pdflrt_linux
+pdflrt_mac
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Local PDF files (original manuals) and the generated database
+PdfDir/*.pdf
+PdfDir/knowledge_base.json
+
+# Local dialogue exports
+Dialogs/

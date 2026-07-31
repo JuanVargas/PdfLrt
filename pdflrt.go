@@ -516,6 +516,10 @@ func main() {
 	fs := http.FileServer(http.Dir("."))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("[Static Server] %s %s\n", r.Method, r.URL.Path)
+		// Disable browser HTTP caching in development to prevent corrupted asset states
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
 		// Set headers to support offline caching and WebAssembly threads/WebGPU
 		w.Header().Set("Service-Worker-Allowed", "/")
 		// COOP and COEP are critical for SharedArrayBuffer support in browsers

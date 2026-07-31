@@ -631,10 +631,20 @@
     <!-- Register PWA Service Worker -->
     <script>
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js?v=10').then(reg => {
-                    console.log('SW Registered!', reg);
-                }).catch(err => console.log('SW Registration failed', err));
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+                for (let registration of registrations) {
+                    registration.unregister().then(() => {
+                        console.log('Service Worker unregistered successfully.');
+                    });
+                }
+            });
+        }
+        if ('caches' in window) {
+            caches.keys().then(names => {
+                for (let name of names) {
+                    caches.delete(name);
+                    console.log('Deleted Cache Storage:', name);
+                }
             });
         }
         

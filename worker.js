@@ -1,6 +1,6 @@
 // worker.js - PdfLrt WebGPU/WASM Offline Inference Worker using LiteRT
 
-import { pipeline, env } from './transformers.min.js';
+import { pipeline, env, AutoTokenizer } from './transformers.min.js';
 import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai';
 
 // Polyfill importScripts for ES Module Workers (required for MediaPipe WASM loading)
@@ -35,8 +35,11 @@ try {
     console.error("[Worker] Failed to define importScripts polyfill:", e);
 }
 
-// Force CDN downloads for transformers.js models (cached in browser cache storage)
-env.allowLocalModels = false;
+// Enable local model loading and disable remote (HF) model loading to guarantee offline functionality
+env.allowLocalModels = true;
+env.allowRemoteModels = false;
+env.localModelPath = self.location.origin + '/models/';
+env.useBrowserCache = false;
 
 // Configure local WASM paths for ONNX Runtime Web to support offline/COEP environments
 try {
@@ -164,19 +167,30 @@ self.onmessage = async (event) => {
             };
 
             try {
+                self.postMessage({ status: 'loading', message: 'Loading local embedding tokenizer...' });
+                const tokenizer = await AutoTokenizer.from_pretrained(embedderModel);
+                
                 embedder = await pipeline('feature-extraction', embedderModel, {
                     ...embedOptions,
+                    tokenizer: tokenizer,
                     device: targetDevice === 'webgpu' ? 'webgpu' : 'wasm',
                     dtype: targetDevice === 'webgpu' ? 'fp32' : 'fp32'
                 });
                 self.postMessage({ status: 'info', message: 'Embedding model loaded successfully.' });
             } catch (embedErr) {
                 console.warn('Embedding load failed on WebGPU, falling back to WASM:', embedErr);
-                embedder = await pipeline('feature-extraction', embedderModel, {
-                    ...embedOptions,
-                    device: 'wasm'
-                });
-                self.postMessage({ status: 'info', message: 'Embedding model loaded using WASM (CPU).' });
+                try {
+                    const tokenizer = await AutoTokenizer.from_pretrained(embedderModel);
+                    embedder = await pipeline('feature-extraction', embedderModel, {
+                        ...embedOptions,
+                        tokenizer: tokenizer,
+                        device: 'wasm'
+                    });
+                    self.postMessage({ status: 'info', message: 'Embedding model loaded using WASM (CPU).' });
+                } catch (wasmEmbedErr) {
+                    console.error('Embedding load failed completely:', wasmEmbedErr);
+                    throw wasmEmbedErr;
+                }
             }
 
             self.postMessage({ status: 'loading', message: 'Verifying model file availability...' });

@@ -724,7 +724,7 @@ function initInferenceWorker() {
     worker.postMessage({
         command: 'load',
         data: {
-            embedderModel: 'nomic-ai/nomic-embed-text-v1.5',
+            embedderModel: './models/nomic-ai/nomic-embed-text-v1.5',
             generatorModelPath: modelUrl,
             device: deviceSelect.value
         }
@@ -854,7 +854,23 @@ deviceSelect.addEventListener('change', () => {
 
 // ---------- Initialization ----------
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
+    // Detect WebGPU support and default to WASM (CPU) if not supported or disabled
+    if (deviceSelect) {
+        let supportsWebGPU = false;
+        try {
+            if (typeof navigator !== 'undefined' && 'gpu' in navigator && navigator.gpu !== undefined) {
+                const adapter = await navigator.gpu.requestAdapter();
+                if (adapter) {
+                    supportsWebGPU = true;
+                }
+            }
+        } catch (e) {
+            console.warn("[App] Error requesting WebGPU adapter:", e);
+        }
+        deviceSelect.value = supportsWebGPU ? 'webgpu' : 'wasm';
+        console.log(`[App] WebGPU supported & active: ${supportsWebGPU}. Set default device to: ${deviceSelect.value}`);
+    }
     fetchPDFList();
     loadKnowledgeBaseJSON();
     initInferenceWorker();

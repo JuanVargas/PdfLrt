@@ -29,14 +29,24 @@ def process_pdfs():
         return
 
     # Check if we can load/download the embedding model
-    print("Loading local embedding model 'nomic-ai/nomic-embed-text-v1.5'...")
-    try:
-        # trust_remote_code=True is required for nomic-embed-text
-        model = SentenceTransformer("nomic-ai/nomic-embed-text-v1.5", trust_remote_code=True)
-        print("Embedding model loaded successfully.")
-    except Exception as e:
-        print(f"Failed to load embedding model: {e}")
-        sys.exit(1)
+    model_path = os.path.join(BASE_DIR, "models", "nomic-ai", "nomic-embed-text-v1.5")
+    if os.path.exists(model_path):
+        print(f"Loading local embedding model from {model_path}...")
+        try:
+            model = SentenceTransformer(model_path, trust_remote_code=True)
+            print("Local embedding model loaded successfully.")
+        except Exception as e:
+            print(f"Failed to load local embedding model: {e}")
+            sys.exit(1)
+    else:
+        print("Loading local embedding model 'nomic-ai/nomic-embed-text-v1.5' from Hugging Face...")
+        try:
+            # trust_remote_code=True is required for nomic-embed-text
+            model = SentenceTransformer("nomic-ai/nomic-embed-text-v1.5", trust_remote_code=True)
+            print("Embedding model loaded successfully from online hub.")
+        except Exception as e:
+            print(f"Failed to load embedding model: {e}")
+            sys.exit(1)
 
     pdf_files = [f for f in os.listdir(PDF_DIR) if f.lower().endswith(".pdf")]
     if not pdf_files:

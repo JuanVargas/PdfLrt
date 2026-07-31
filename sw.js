@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pdflrt-cache-v10';
+const CACHE_NAME = 'pdflrt-cache-v11';
 
 const urlsToCache = [
   '/',
