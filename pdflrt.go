@@ -490,6 +490,17 @@ func downloadWasmFiles() {
 	}
 }
 
+func checkEmbeddingModel() {
+	modelPath := filepath.Join("models", "nomic-ai", "nomic-embed-text-v1.5", "config.json")
+	if _, err := os.Stat(modelPath); os.IsNotExist(err) {
+		fmt.Println("⚠️  Local embedding model NOT found under models/nomic-ai/nomic-embed-text-v1.5/")
+		fmt.Println("👉 If host has internet access, run: python3 download_model_from_github.py")
+		fmt.Println("👉 For offline machines, copy the 'models/' folder from an initialized environment.")
+	} else {
+		fmt.Println("✅ Local ONNX embedding model found and ready.")
+	}
+}
+
 func main() {
 	// Register custom mime types to ensure proper wasm/mjs loading in browser
 	_ = mime.AddExtensionType(".wasm", "application/wasm")
@@ -499,6 +510,10 @@ func main() {
 	_ = os.MkdirAll("PdfDir", 0755)
 	_ = os.MkdirAll("Dialogs", 0755)
 	_ = os.MkdirAll("wasm", 0755)
+	_ = os.MkdirAll("models", 0755)
+
+	// Verify local embedding model availability
+	checkEmbeddingModel()
 
 	// Download WASM resources for offline same-origin resolution
 	downloadWasmFiles()

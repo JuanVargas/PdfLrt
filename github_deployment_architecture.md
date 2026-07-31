@@ -50,7 +50,7 @@ To comply with GitHub's file size limits, PdfLrt splits code assets and model we
 ## 3. Directory Structures
 
 ### A. What is pushed to GitHub (Git Repository)
-Your remote repository on GitHub contains only lightweight code files:
+The remote repository on GitHub contains only lightweight code files:
 ```text
 ├── go.mod / go.sum
 ├── pdflrt.go                      <-- Go server launcher
@@ -69,8 +69,8 @@ After pulling the code and running `download_model_from_github.py` and `build_kn
 ```text
 ├── [ALL REPOSITORY CODE FILES]
 ├── PdfDir/
-│   ├── faa-manual-1.pdf
-│   └── knowledge_base.json        <-- Generated locally (431 MB)
+│   ├── files.pdf
+│   └── knowledge_base.json        <-- Generated locally ( xxx MBs)
 └── models/
     └── nomic-ai/
         └── nomic-embed-text-v1.5/ <-- Downloaded from Release (1.6 GB extracted)

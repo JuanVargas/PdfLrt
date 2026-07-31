@@ -87,6 +87,7 @@ Zip or copy the following files/folders from the build machine and transfer them
 ├── manifest.json                  <-- PWA application manifest file
 ├── icon-192.png & icon-512.png    <-- PWA app logo graphics
 ├── wasm/                          <-- local folder containing downloaded MediaPipe runtime binaries
+├── models/                        <-- local folder containing ONNX embedding model (models/nomic-ai/nomic-embed-text-v1.5)
 └── PdfDir/
     └── knowledge_base.json        <-- The parsed and embedded document database file
 ```
@@ -94,6 +95,8 @@ Zip or copy the following files/folders from the build machine and transfer them
 > [!NOTES]
 
 > * **Raw PDF Files**: We do **not** need to copy the original `.pdf` files. Once `build_knowledge_base.py` has run on the host and generated `knowledge_base.json`, the knowlodge base file is completely self-contained (including text, page metrics, and embedded figure snapshots).
+
+> * **Models Directory**: The browser Web Worker uses `models/nomic-ai/nomic-embed-text-v1.5` to convert user queries into vector embeddings offline. Ensure the `models/` folder is included in the package for target machines (or run `python3 download_model_from_github.py` on machines with internet connection).
 
 > * **Wasm Directory**: The Go server downloads necessary WASM runtime engines into the `wasm/` directory on startup. If target machines will run fully offline, run the Go server once on an online host to populate this directory, and then pack the folder for offline target machines.
 
