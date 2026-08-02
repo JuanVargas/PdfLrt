@@ -1,6 +1,6 @@
 // worker.js - PdfLrt WebGPU/WASM Offline Inference Worker using LiteRT
 
-import { pipeline, env, AutoTokenizer } from './transformers.min.js';
+import { pipeline, env } from './transformers.min.js';
 import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai';
 
 // Polyfill importScripts for ES Module Workers (required for MediaPipe WASM loading)
@@ -35,40 +35,8 @@ try {
     console.error("[Worker] Failed to define importScripts polyfill:", e);
 }
 
-// Enable local model loading and disable remote (HF) model loading to guarantee offline functionality
-env.allowLocalModels = true;
-env.allowRemoteModels = false;
-env.localModelPath = self.location.origin + '/models/';
-env.useBrowserCache = false;
-
-// Configure local WASM paths for ONNX Runtime Web to support offline/COEP environments
-try {
-    const isSafari = typeof navigator !== 'undefined' && 
-        (navigator.vendor || "").indexOf("Apple") > -1 && 
-        !navigator.userAgent.match(/CriOS|FxiOS|EdgiOS|OPiOS|mercury|brave/i) && 
-        !navigator.userAgent.includes("Chrome") && 
-        !navigator.userAgent.includes("Android");
-
-    const wasmFolder = self.location.origin + '/wasm/';
-    const wasmPaths = isSafari ? {
-        mjs: wasmFolder + 'ort-wasm-simd-threaded.mjs',
-        wasm: wasmFolder + 'ort-wasm-simd-threaded.wasm'
-    } : {
-        mjs: wasmFolder + 'ort-wasm-simd-threaded.asyncify.mjs',
-        wasm: wasmFolder + 'ort-wasm-simd-threaded.asyncify.wasm'
-    };
-
-    if (env.backends && env.backends.onnx) {
-        if (!env.backends.onnx.wasm) env.backends.onnx.wasm = {};
-        env.backends.onnx.wasm.wasmPaths = wasmPaths;
-    }
-    if (env.onnx) {
-        if (!env.onnx.wasm) env.onnx.wasm = {};
-        env.onnx.wasm.wasmPaths = wasmPaths;
-    }
-} catch (e) {
-    console.warn("Failed to set early WASM paths in worker.js:", e);
-}
+// Force CDN downloads for transformers.js models (cached in browser cache storage)
+env.allowLocalModels = false;
 
 let embedder = null;
 let llmInference = null;
@@ -103,42 +71,12 @@ self.onmessage = async (event) => {
                         requiredFeatures: ['shader-f16']
                     };
                     
-                    const isSafari = typeof navigator !== 'undefined' && 
-                        (navigator.vendor || "").indexOf("Apple") > -1 && 
-                        !navigator.userAgent.match(/CriOS|FxiOS|EdgiOS|OPiOS|mercury|brave/i) && 
-                        !navigator.userAgent.includes("Chrome") && 
-                        !navigator.userAgent.includes("Android");
-
-                    const wasmFolder = self.location.origin + '/wasm/';
-                    const wasmPaths = isSafari ? {
-                        mjs: wasmFolder + 'ort-wasm-simd-threaded.mjs',
-                        wasm: wasmFolder + 'ort-wasm-simd-threaded.wasm'
-                    } : {
-                        mjs: wasmFolder + 'ort-wasm-simd-threaded.asyncify.mjs',
-                        wasm: wasmFolder + 'ort-wasm-simd-threaded.asyncify.wasm'
-                    };
-
                     if (!env.backends.onnx.wasm) env.backends.onnx.wasm = {};
-                    env.backends.onnx.wasm.wasmPaths = wasmPaths;
+                    env.backends.onnx.wasm.wasmPaths = self.location.origin + '/wasm/';
                 }
                 if (env.onnx) {
-                    const isSafari = typeof navigator !== 'undefined' && 
-                        (navigator.vendor || "").indexOf("Apple") > -1 && 
-                        !navigator.userAgent.match(/CriOS|FxiOS|EdgiOS|OPiOS|mercury|brave/i) && 
-                        !navigator.userAgent.includes("Chrome") && 
-                        !navigator.userAgent.includes("Android");
-
-                    const wasmFolder = self.location.origin + '/wasm/';
-                    const wasmPaths = isSafari ? {
-                        mjs: wasmFolder + 'ort-wasm-simd-threaded.mjs',
-                        wasm: wasmFolder + 'ort-wasm-simd-threaded.wasm'
-                    } : {
-                        mjs: wasmFolder + 'ort-wasm-simd-threaded.asyncify.mjs',
-                        wasm: wasmFolder + 'ort-wasm-simd-threaded.asyncify.wasm'
-                    };
-
                     if (!env.onnx.wasm) env.onnx.wasm = {};
-                    env.onnx.wasm.wasmPaths = wasmPaths;
+                    env.onnx.wasm.wasmPaths = self.location.origin + '/wasm/';
                 }
             } catch (e) {
                 console.warn("Failed to set WebGPU/WASM device options in Transformers.js:", e);
@@ -167,30 +105,19 @@ self.onmessage = async (event) => {
             };
 
             try {
-                self.postMessage({ status: 'loading', message: 'Loading local embedding tokenizer...' });
-                const tokenizer = await AutoTokenizer.from_pretrained(embedderModel);
-                
                 embedder = await pipeline('feature-extraction', embedderModel, {
                     ...embedOptions,
-                    tokenizer: tokenizer,
                     device: targetDevice === 'webgpu' ? 'webgpu' : 'wasm',
                     dtype: targetDevice === 'webgpu' ? 'fp32' : 'fp32'
                 });
                 self.postMessage({ status: 'info', message: 'Embedding model loaded successfully.' });
             } catch (embedErr) {
                 console.warn('Embedding load failed on WebGPU, falling back to WASM:', embedErr);
-                try {
-                    const tokenizer = await AutoTokenizer.from_pretrained(embedderModel);
-                    embedder = await pipeline('feature-extraction', embedderModel, {
-                        ...embedOptions,
-                        tokenizer: tokenizer,
-                        device: 'wasm'
-                    });
-                    self.postMessage({ status: 'info', message: 'Embedding model loaded using WASM (CPU).' });
-                } catch (wasmEmbedErr) {
-                    console.error('Embedding load failed completely:', wasmEmbedErr);
-                    throw wasmEmbedErr;
-                }
+                embedder = await pipeline('feature-extraction', embedderModel, {
+                    ...embedOptions,
+                    device: 'wasm'
+                });
+                self.postMessage({ status: 'info', message: 'Embedding model loaded using WASM (CPU).' });
             }
 
             self.postMessage({ status: 'loading', message: 'Verifying model file availability...' });
@@ -229,18 +156,8 @@ self.onmessage = async (event) => {
                     throw new Error("WASM mode selected");
                 }
             } catch (gpuErr) {
-                console.warn('LiteRT GPU loading failed or bypassed, falling back to CPU:', gpuErr);
-                self.postMessage({ status: 'loading', message: 'GPU initialization failed. Downloading & compiling LiteRT LLM on CPU...' });
-                
-                llmInference = await LlmInference.createFromOptions(genai, {
-                    baseOptions: {
-                        modelAssetPath: modelUrl,
-                        delegate: 'CPU'
-                    },
-                    maxTokens: 2048,
-                    temperature: 0.3
-                });
-                self.postMessage({ status: 'ready', actualDevice: 'wasm' });
+                console.warn('LiteRT GPU loading failed:', gpuErr);
+                throw new Error("WebGPU is required for LiteRT LLM inference on the web. LiteRT GenAI does not support CPU-only (WASM) execution in the browser. Please ensure WebGPU is enabled.");
             }
         } catch (error) {
             console.error('Error loading models in worker:', error);

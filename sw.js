@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pdflrt-cache-v11';
+const CACHE_NAME = 'pdflrt-cache-v8';
 
 const urlsToCache = [
   '/',
@@ -17,16 +17,7 @@ self.addEventListener('install', event => {
     caches.open(CACHE_NAME)
       .then(cache => {
         console.log('Opened static assets PWA cache for PdfLrt');
-        const cachePromises = urlsToCache.map(url => {
-          return fetch(new Request(url, { cache: 'reload' }))
-            .then(response => {
-              if (response.ok) {
-                return cache.put(url, response);
-              }
-              throw new Error(`Request failed for ${url}`);
-            });
-        });
-        return Promise.all(cachePromises);
+        return cache.addAll(urlsToCache);
       })
   );
   self.skipWaiting();
@@ -52,13 +43,7 @@ self.addEventListener('fetch', event => {
             return response;
           }
 
-          // Do not dynamically cache large model binaries or WebAssembly files
-          const urlStr = event.request.url.toLowerCase();
-          if (urlStr.endsWith('.wasm') || urlStr.endsWith('.bin') || urlStr.endsWith('.onnx') || urlStr.includes('/models/') || urlStr.includes('/wasm/')) {
-            return response;
-          }
-
-          // Dynamically cache other small GET assets (like fonts, scripts)
+          // Dynamically cache other GET assets (like fonts, scripts, TFLite/LiteRT model tasks)
           var responseToCache = response.clone();
           caches.open(CACHE_NAME).then(cache => {
             if (event.request.method === "GET") {

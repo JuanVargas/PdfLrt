@@ -549,8 +549,14 @@
             </button>
             <select id="device-select" class="btn" style="background: rgba(30, 41, 59, 0.4); border: 1px solid var(--panel-border); font-size:12px; color: var(--text-main); border-radius: 8px; cursor: pointer; height: 34px; padding: 4px 10px;">
                 <option value="webgpu">LiteRT WebGPU (GPU)</option>
-                <option value="wasm">LiteRT WASM (CPU)</option>
+                <option value="wasm" disabled style="color: var(--text-muted);">LiteRT WASM (CPU) - WebGPU Required</option>
             </select>
+            <button class="btn" id="btn-webgpu-trouble" style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); font-size:12px; color: #fbbf24; border-radius: 8px; cursor: pointer; height: 34px; padding: 4px 12px; font-weight: 600;" title="Troubleshoot WebGPU support">
+                🛠️ WebGPU Guide
+            </button>
+            <button class="btn" id="btn-force-reset" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); font-size:12px; color: #f87171; border-radius: 8px; cursor: pointer; height: 34px; padding: 4px 12px; font-weight: 600;" title="Force clear browser cache and service workers">
+                🗑️ Reset Cache
+            </button>
             <span id="model-status" style="font-size:12px; color: var(--success); background: rgba(16, 185, 129, 0.08); padding: 6px 14px; border-radius: 20px; border: 1px solid rgba(16, 185, 129, 0.2)">
                 ● Server Connected
             </span>
@@ -631,20 +637,21 @@
     <!-- Register PWA Service Worker -->
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(registrations => {
-                for (let registration of registrations) {
-                    registration.unregister().then(() => {
-                        console.log('Service Worker unregistered successfully.');
-                    });
-                }
-            });
-        }
-        if ('caches' in window) {
-            caches.keys().then(names => {
-                for (let name of names) {
-                    caches.delete(name);
-                    console.log('Deleted Cache Storage:', name);
-                }
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').then(reg => {
+                    console.log('SW Registered!', reg);
+                    reg.onupdatefound = () => {
+                        const installingWorker = reg.installing;
+                        installingWorker.onstatechange = () => {
+                            if (installingWorker.state === 'installed') {
+                                if (navigator.serviceWorker.controller) {
+                                    console.log('New updates detected. Reloading page...');
+                                    window.location.reload();
+                                }
+                            }
+                        };
+                    };
+                }).catch(err => console.log('SW Registration failed', err));
             });
         }
         
@@ -676,7 +683,128 @@
             setTimeout(() => errorDiv.remove(), 8000);
         }
         window.showGlobalError = showGlobalError;
+
+        function switchTroubleTab(tabId) {
+            document.querySelectorAll('.trouble-tab-content').forEach(el => {
+                el.style.display = 'none';
+            });
+            document.getElementById('tab-content-' + tabId).style.display = 'block';
+            document.querySelectorAll('.trouble-tab-btn').forEach(btn => {
+                btn.style.background = 'transparent';
+                btn.style.borderColor = 'transparent';
+                btn.style.color = 'var(--text-muted)';
+            });
+            const clickedBtn = Array.from(document.querySelectorAll('.trouble-tab-btn')).find(btn => btn.getAttribute('onclick').includes(tabId));
+            if (clickedBtn) {
+                clickedBtn.style.background = 'rgba(59, 130, 246, 0.15)';
+                clickedBtn.style.borderColor = 'rgba(59, 130, 246, 0.3)';
+                clickedBtn.style.color = '#60a5fa';
+            }
+        }
+        window.switchTroubleTab = switchTroubleTab;
     </script>
+    
+    <!-- WebGPU Troubleshooting Modal -->
+    <div id="webgpu-trouble-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(5, 7, 15, 0.85); backdrop-filter: blur(10px); z-index: 10000; align-items: center; justify-content: center; padding: 20px;">
+        <style>
+            @keyframes modalFadeIn {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+        </style>
+        <div style="background: #0d1426; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; max-width: 650px; width: 100%; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); animation: modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);">
+            <!-- Modal Header -->
+            <div style="padding: 20px 24px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="font-size: 18px; font-weight: 700; color: #ffffff; display: flex; align-items: center; gap: 8px;">
+                    🛠️ WebGPU Troubleshooting & Setup Guide
+                </h3>
+                <button id="btn-close-trouble" style="background: transparent; border: none; color: var(--text-muted); font-size: 24px; cursor: pointer; transition: color 0.2s; padding: 0 4px; line-height: 1;">&times;</button>
+            </div>
+            <!-- Modal Content -->
+            <div style="padding: 24px; overflow-y: auto; font-size: 14px; line-height: 1.6; color: #cbd5e1; flex-grow: 1;">
+                <p style="margin-bottom: 16px;">
+                    Google's <strong>LiteRT LLM Inference</strong> requires <strong>WebGPU</strong> acceleration in the browser. 
+                    WebGPU is currently disabled, unsupported, or blocked on your system/browser. Follow the instructions below to enable it:
+                </p>
+                
+                <!-- Tab Headers -->
+                <div style="display: flex; gap: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 20px; padding-bottom: 10px; overflow-x: auto;">
+                    <button class="trouble-tab-btn" onclick="switchTroubleTab('linux')" style="background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); color: #60a5fa; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s;">🐧 Linux (Nvidia)</button>
+                    <button class="trouble-tab-btn" onclick="switchTroubleTab('windows')" style="background: transparent; border: 1px solid transparent; color: var(--text-muted); padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s;">🪟 Windows</button>
+                    <button class="trouble-tab-btn" onclick="switchTroubleTab('macos')" style="background: transparent; border: 1px solid transparent; color: var(--text-muted); padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s;">🍎 macOS</button>
+                    <button class="trouble-tab-btn" onclick="switchTroubleTab('mobile')" style="background: transparent; border: 1px solid transparent; color: var(--text-muted); padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s;">📱 Mobile (iPad)</button>
+                </div>
+                
+                <!-- Linux Tab -->
+                <div id="tab-content-linux" class="trouble-tab-content">
+                    <div style="background: rgba(239, 68, 68, 0.05); border-left: 3px solid var(--danger); padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+                        <strong style="color: #f87171;">⚠️ Nvidia & Chrome Linux Conflict:</strong> 
+                        Chrome's hardware acceleration often glitches or flickers on Linux with Nvidia drivers. Launching Chrome with <code>--disable-gpu</code> stops the flickering but disables WebGPU completely.
+                    </div>
+                    <p style="margin-bottom: 12px;"><strong>To force-enable WebGPU stably on Linux:</strong></p>
+                    <ol style="margin-left: 20px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px;">
+                        <li>Open <code>chrome://flags</code> in Chrome.</li>
+                        <li>Search for and <strong>Enable</strong>:
+                            <ul style="margin-left: 20px; margin-top: 4px;">
+                                <li><code>#enable-unsafe-webgpu</code></li>
+                                <li><code>#enable-vulkan</code></li>
+                            </ul>
+                        </li>
+                        <li>Search for <code>#ozone-platform-hint</code> and change it to <strong>X11</strong> (forces stable rendering and bypasses Wayland sync glitches).</li>
+                        <li>Alternatively, run Chrome from terminal using these stability flags:
+                            <pre style="background: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 6px; font-family: monospace; font-size: 11px; margin-top: 6px; overflow-x: auto; border: 1px solid rgba(255, 255, 255, 0.05); color: #38bdf8;">google-chrome --enable-unsafe-webgpu --enable-features=Vulkan --ozone-platform=x11</pre>
+                        </li>
+                        <li>If Chrome still flickers, disable GPU compositing but keep WebGPU active by running:
+                            <pre style="background: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 6px; font-family: monospace; font-size: 11px; margin-top: 6px; overflow-x: auto; border: 1px solid rgba(255, 255, 255, 0.05); color: #38bdf8;">google-chrome --enable-unsafe-webgpu --enable-features=Vulkan --ozone-platform=x11 --disable-gpu-compositing</pre>
+                        </li>
+                    </ol>
+                </div>
+                
+                <!-- Windows Tab -->
+                <div id="tab-content-windows" class="trouble-tab-content" style="display: none;">
+                    <p style="margin-bottom: 12px;"><strong>Ensure Hardware Acceleration is Active:</strong></p>
+                    <ol style="margin-left: 20px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px;">
+                        <li>Go to Chrome <strong>Settings > System</strong>.</li>
+                        <li>Toggle <strong>"Use graphics acceleration when available"</strong> to <strong>ON</strong>.</li>
+                        <li>Click <strong>Relaunch</strong>.</li>
+                    </ol>
+                    <div style="background: rgba(59, 130, 246, 0.08); border-left: 3px solid var(--accent); padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+                        <strong style="color: #60a5fa;">💡 Remote Access over Local Network (HTTP):</strong> 
+                        WebGPU requires a Secure Context. If accessing a Windows host from another device (like an iPad/Tablet), you must permit insecure origins:
+                        <ul style="margin-left: 20px; margin-top: 6px;">
+                            <li>Open <code>chrome://flags</code>.</li>
+                            <li>Search for <code>#unsafely-treat-insecure-origin-as-secure</code>.</li>
+                            <li>Set it to <strong>Enabled</strong> and enter your server IP (e.g. <code>https://192.168.1.15:8443</code> or <code>http://192.168.1.15:8085</code>) in the text box.</li>
+                            <li>Relaunch Chrome.</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <!-- macOS Tab -->
+                <div id="tab-content-macos" class="trouble-tab-content" style="display: none;">
+                    <p style="margin-bottom: 12px;">WebGPU is supported on Apple Silicon and Intel Macs:</p>
+                    <ul style="margin-left: 20px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px;">
+                        <li><strong>Safari 17+:</strong> Open Safari, go to <strong>Settings (Preferences) > Advanced</strong>. Tick <em>"Show features for web developers"</em>. In the new <strong>Develop</strong> menu, select <strong>Feature Flags > WebGPU</strong> and ensure it is checked.</li>
+                        <li><strong>Chrome / Edge:</strong> Enabled by default. If disabled, ensure Hardware Acceleration is ON in browser Settings.</li>
+                    </ul>
+                </div>
+                
+                <!-- Mobile Tab -->
+                <div id="tab-content-mobile" class="trouble-tab-content" style="display: none;">
+                    <p style="margin-bottom: 12px;"><strong>For Apple iPad / iPhone (iOS 17+):</strong></p>
+                    <ol style="margin-left: 20px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px;">
+                        <li>Open iPad/iPhone <strong>Settings > Safari > Advanced > Feature Flags</strong> (or <em>Experimental Features</em>).</li>
+                        <li>Toggle <strong>WebGPU</strong> to <strong>ON</strong>.</li>
+                        <li>Since LAN addresses (`https://192.168.x.x:8443` or `http://192.168.x.x:8085`) are insecure, Safari disables WebGPU. To bypass this, tap the <strong>Share</strong> button in Safari and choose <strong>Add to Home Screen</strong>. Opening the app from the Home Screen PWA icon runs it in a standalone sandbox with secure context privileges.</li>
+                    </ol>
+                </div>
+            </div>
+            <!-- Modal Footer -->
+            <div style="padding: 16px 24px; border-top: 1px solid rgba(255, 255, 255, 0.08); display: flex; justify-content: flex-end; background: #080c1c;">
+                <button id="btn-close-trouble-footer" class="btn" style="background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.15); height: 34px; padding: 4px 14px; border-radius: 8px; font-size: 13px; color: var(--text-main); cursor: pointer;">Close Guide</button>
+            </div>
+        </div>
+    </div>
     
     <script type="module" src="app.js?v=226"></script>
 </body>

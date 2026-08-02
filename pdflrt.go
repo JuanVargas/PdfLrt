@@ -490,17 +490,6 @@ func downloadWasmFiles() {
 	}
 }
 
-func checkEmbeddingModel() {
-	modelPath := filepath.Join("models", "nomic-ai", "nomic-embed-text-v1.5", "config.json")
-	if _, err := os.Stat(modelPath); os.IsNotExist(err) {
-		fmt.Println("⚠️  Local embedding model NOT found under models/nomic-ai/nomic-embed-text-v1.5/")
-		fmt.Println("👉 If host has internet access, run: python3 download_model_from_github.py")
-		fmt.Println("👉 For offline machines, copy the 'models/' folder from an initialized environment.")
-	} else {
-		fmt.Println("✅ Local ONNX embedding model found and ready.")
-	}
-}
-
 func main() {
 	// Register custom mime types to ensure proper wasm/mjs loading in browser
 	_ = mime.AddExtensionType(".wasm", "application/wasm")
@@ -510,10 +499,6 @@ func main() {
 	_ = os.MkdirAll("PdfDir", 0755)
 	_ = os.MkdirAll("Dialogs", 0755)
 	_ = os.MkdirAll("wasm", 0755)
-	_ = os.MkdirAll("models", 0755)
-
-	// Verify local embedding model availability
-	checkEmbeddingModel()
 
 	// Download WASM resources for offline same-origin resolution
 	downloadWasmFiles()
@@ -531,10 +516,6 @@ func main() {
 	fs := http.FileServer(http.Dir("."))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("[Static Server] %s %s\n", r.Method, r.URL.Path)
-		// Disable browser HTTP caching in development to prevent corrupted asset states
-		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-		w.Header().Set("Pragma", "no-cache")
-		w.Header().Set("Expires", "0")
 		// Set headers to support offline caching and WebAssembly threads/WebGPU
 		w.Header().Set("Service-Worker-Allowed", "/")
 		// COOP and COEP are critical for SharedArrayBuffer support in browsers
@@ -569,7 +550,14 @@ func main() {
 		}
 	}()
 
-	fmt.Printf("Main HTTPS Server starting on https://localhost:%s\n", httpsPort)
+	fmt.Println("========================================================================")
+	fmt.Printf("🚀 PdfLrt HTTPS Server starting on https://localhost:%s\n", httpsPort)
+	fmt.Println("========================================================================")
+	fmt.Println("💡 WebGPU Linux & Nvidia Optimization Tip:")
+	fmt.Println("   Chrome may behave erratically or disable WebGPU on Linux with Nvidia GPUs.")
+	fmt.Println("   To run with WebGPU enabled safely without flickering or lag, run:")
+	fmt.Println("   google-chrome --enable-unsafe-webgpu --enable-features=Vulkan --ozone-platform=x11")
+	fmt.Println("========================================================================")
 	server = &http.Server{Addr: ":" + httpsPort}
 	err := server.ListenAndServeTLS("cert.pem", "key.pem")
 	if err != nil && err != http.ErrServerClosed {

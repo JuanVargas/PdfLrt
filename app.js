@@ -40,6 +40,55 @@ const imageModalClose = document.getElementById('image-modal-close');
 imageModalClose.onclick = () => { imageModal.style.display = 'none'; };
 imageModal.onclick = (e) => { if(e.target === imageModal) imageModal.style.display = 'none'; };
 
+// Troubleshoot WebGPU Modal Elements
+const btnWebgpuTrouble = document.getElementById('btn-webgpu-trouble');
+const webgpuTroubleModal = document.getElementById('webgpu-trouble-modal');
+const btnCloseTrouble = document.getElementById('btn-close-trouble');
+const btnCloseTroubleFooter = document.getElementById('btn-close-trouble-footer');
+
+if (btnWebgpuTrouble) {
+    btnWebgpuTrouble.onclick = () => {
+        if (webgpuTroubleModal) {
+            webgpuTroubleModal.style.display = 'flex';
+            if (window.switchTroubleTab) window.switchTroubleTab('linux');
+        }
+    };
+}
+if (btnCloseTrouble) btnCloseTrouble.onclick = () => { webgpuTroubleModal.style.display = 'none'; };
+if (btnCloseTroubleFooter) btnCloseTroubleFooter.onclick = () => { webgpuTroubleModal.style.display = 'none'; };
+if (webgpuTroubleModal) {
+    webgpuTroubleModal.onclick = (e) => {
+        if (e.target === webgpuTroubleModal) webgpuTroubleModal.style.display = 'none';
+    };
+}
+
+const btnForceReset = document.getElementById('btn-force-reset');
+if (btnForceReset) {
+    btnForceReset.onclick = async () => {
+        if (confirm("This will clear the browser's PWA offline cache and unregister the service worker to force a clean reload. Proceed?")) {
+            try {
+                if ('serviceWorker' in navigator) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    for (let reg of regs) {
+                        await reg.unregister();
+                    }
+                }
+                if ('caches' in window) {
+                    const keys = await caches.keys();
+                    for (let key of keys) {
+                        await caches.delete(key);
+                    }
+                }
+                alert("Cache cleared successfully! Reloading page...");
+                window.location.reload();
+            } catch (err) {
+                console.error("Failed to clear cache:", err);
+                alert("Error clearing cache: " + err.message);
+            }
+        }
+    };
+}
+
 // ---------- Audio STT / TTS Capabilities ----------
 
 function initSpeechRecognition() {
@@ -632,6 +681,28 @@ History:
 function initInferenceWorker() {
     const modelUrl = modelPathInput.value.trim();
     
+    // Check for WebGPU support early
+    if (!navigator.gpu) {
+        modelStatusText.innerHTML = "● WebGPU Unsupported";
+        modelStatusText.style.color = "var(--danger)";
+        modelStatusDetail.innerHTML = "navigator.gpu is undefined.";
+        
+        appendMessage(false, `❌ **Error**: WebGPU is not supported or enabled in this browser. 
+        <br><br>
+        <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 14px; margin-top: 8px; border-left: 4px solid #fbbf24; line-height: 1.5; text-align: left;">
+            <strong style="color: #fbbf24; font-size: 14px;">WebGPU Required for LiteRT LLM:</strong><br>
+            LiteRT LLM inference runs entirely on the GPU via WebGPU. Since WebGPU is not active:
+            <ul style="margin-left: 20px; margin-top: 6px; font-size: 13px; color: #cbd5e1; display: flex; flex-direction: column; gap: 4px;">
+                <li>If you are on <strong>Linux (Nvidia)</strong>, Chrome may have disabled hardware acceleration due to driver glitches. Run with specific flags to enable it stably.</li>
+                <li>If you are accessing this server <strong>remotely</strong> (e.g., from an iPad), WebGPU is blocked because the connection is HTTP. You must configure secure context bypass flags.</li>
+            </ul>
+            <button class="btn" onclick="document.getElementById('webgpu-trouble-modal').style.display='flex'; if(window.switchTroubleTab) window.switchTroubleTab('linux');" style="margin-top: 12px; background: #fbbf24; color: #05070f; border: none; font-weight: 700; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                🛠️ Open WebGPU Setup Guide
+            </button>
+        </div>`, [], "SYSTEM");
+        return;
+    }
+    
     // Check if the local model file exists on server and show alert if missing
     if (modelUrl.startsWith('/models/')) {
         fetch(modelUrl, { method: 'HEAD' }).then(res => {
@@ -716,7 +787,22 @@ function initInferenceWorker() {
             modelStatusText.style.color = "var(--danger)";
             modelStatusDetail.innerHTML = error;
             if (window.currentSpinnerEl) window.currentSpinnerEl.remove();
-            appendMessage(false, `❌ **Error**: ${error}`, [], "SYSTEM");
+            
+            const isWebGPUError = error.includes("navigator.gpu") || error.includes("WebGPU") || error.includes("adapter");
+            if (isWebGPUError) {
+                appendMessage(false, `❌ **Error**: ${error}
+                <br><br>
+                <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 14px; margin-top: 8px; border-left: 4px solid #fbbf24; line-height: 1.5; text-align: left;">
+                    <strong style="color: #fbbf24; font-size: 14px;">WebGPU Configuration Issue Detected:</strong><br>
+                    The inference worker failed to request a WebGPU adapter. Please follow the WebGPU troubleshooting steps for your operating system.
+                    <br>
+                    <button class="btn" onclick="document.getElementById('webgpu-trouble-modal').style.display='flex'; if(window.switchTroubleTab) window.switchTroubleTab('linux');" style="margin-top: 12px; background: #fbbf24; color: #05070f; border: none; font-weight: 700; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                        🛠️ Open WebGPU Setup Guide
+                    </button>
+                </div>`, [], "SYSTEM");
+            } else {
+                appendMessage(false, `❌ **Error**: ${error}`, [], "SYSTEM");
+            }
         }
     };
 
@@ -724,7 +810,7 @@ function initInferenceWorker() {
     worker.postMessage({
         command: 'load',
         data: {
-            embedderModel: './models/nomic-ai/nomic-embed-text-v1.5',
+            embedderModel: 'nomic-ai/nomic-embed-text-v1.5',
             generatorModelPath: modelUrl,
             device: deviceSelect.value
         }
@@ -854,23 +940,7 @@ deviceSelect.addEventListener('change', () => {
 
 // ---------- Initialization ----------
 
-window.addEventListener('DOMContentLoaded', async () => {
-    // Detect WebGPU support and default to WASM (CPU) if not supported or disabled
-    if (deviceSelect) {
-        let supportsWebGPU = false;
-        try {
-            if (typeof navigator !== 'undefined' && 'gpu' in navigator && navigator.gpu !== undefined) {
-                const adapter = await navigator.gpu.requestAdapter();
-                if (adapter) {
-                    supportsWebGPU = true;
-                }
-            }
-        } catch (e) {
-            console.warn("[App] Error requesting WebGPU adapter:", e);
-        }
-        deviceSelect.value = supportsWebGPU ? 'webgpu' : 'wasm';
-        console.log(`[App] WebGPU supported & active: ${supportsWebGPU}. Set default device to: ${deviceSelect.value}`);
-    }
+window.addEventListener('DOMContentLoaded', () => {
     fetchPDFList();
     loadKnowledgeBaseJSON();
     initInferenceWorker();
