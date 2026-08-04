@@ -5,6 +5,10 @@ import base64
 import re
 import sys
 
+# Force Hugging Face and Transformers libraries to operate strictly offline
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PDF_DIR = os.path.join(BASE_DIR, "PdfDir")
 OUTPUT_FILE = os.path.join(PDF_DIR, "knowledge_base.json")
@@ -31,21 +35,26 @@ def process_pdfs():
     # Check if we can load/download the embedding model
     model_path = os.path.join(BASE_DIR, "models", "nomic-ai", "nomic-embed-text-v1.5")
     if os.path.exists(model_path):
-        print(f"Loading local embedding model from {model_path}...")
+        print(f"Loading local embedding model from {model_path} (forcing local_files_only)...")
         try:
-            model = SentenceTransformer(model_path, trust_remote_code=True)
+            model = SentenceTransformer(model_path, trust_remote_code=True, local_files_only=True)
             print("Local embedding model loaded successfully.")
         except Exception as e:
             print(f"Failed to load local embedding model: {e}")
             sys.exit(1)
     else:
-        print("Loading local embedding model 'nomic-ai/nomic-embed-text-v1.5' from Hugging Face...")
+        print("Embedding model directory 'models/nomic-ai/nomic-embed-text-v1.5' was not found locally.")
+        print("Attempting online fallback to 'nomic-ai/nomic-embed-text-v1.5' from Hugging Face (will fail if offline)...")
         try:
             # trust_remote_code=True is required for nomic-embed-text
             model = SentenceTransformer("nomic-ai/nomic-embed-text-v1.5", trust_remote_code=True)
             print("Embedding model loaded successfully from online hub.")
         except Exception as e:
             print(f"Failed to load embedding model: {e}")
+            print("\n❌ Error: Could not resolve the embedding model.")
+            print("Since you are operating in an offline or restricted network environment,")
+            print("you MUST manually copy the 'models/' directory containing the embedding model files")
+            print("from a machine with internet access or use the packaged offline release.")
             sys.exit(1)
 
     pdf_files = [f for f in os.listdir(PDF_DIR) if f.lower().endswith(".pdf")]

@@ -125,6 +125,12 @@ git commit -m "describe chentges to repo" # wrap the staged changes into a commi
 git push origin main  # push modificatins to repo
 
 
+## 2026 0804:
+
+git status
+git add .
+git commit -m "Fix offline compatibility and add release script"
+git push origin main
 
 ```
 
