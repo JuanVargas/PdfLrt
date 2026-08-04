@@ -275,18 +275,28 @@ func loadKnowledgeBaseStats() error {
 		return fmt.Errorf("failed to read knowledge base file: %v", err)
 	}
 
+	// Try parsing as the new format (object with chunks and figures)
 	var tempKB struct {
 		Chunks  []interface{} `json:"chunks"`
 		Figures []interface{} `json:"figures"`
 	}
-	if err := json.Unmarshal(data, &tempKB); err != nil {
-		return fmt.Errorf("failed to parse knowledge base: %v", err)
+	if err := json.Unmarshal(data, &tempKB); err == nil {
+		kbCount.Chunks = len(tempKB.Chunks)
+		kbCount.Figures = len(tempKB.Figures)
+		fmt.Printf("📂 Knowledge Base stats loaded (new format): %d text chunks and %d visual assets.\n", kbCount.Chunks, kbCount.Figures)
+		return nil
 	}
 
-	kbCount.Chunks = len(tempKB.Chunks)
-	kbCount.Figures = len(tempKB.Figures)
-	fmt.Printf("📂 Knowledge Base stats loaded: %d text chunks and %d visual assets.\n", kbCount.Chunks, kbCount.Figures)
-	return nil
+	// Try parsing as the old format (flat array of chunks)
+	var tempChunks []interface{}
+	if err := json.Unmarshal(data, &tempChunks); err == nil {
+		kbCount.Chunks = len(tempChunks)
+		kbCount.Figures = 0
+		fmt.Printf("📂 Knowledge Base stats loaded (old flat array format): %d text chunks and 0 visual assets.\n", kbCount.Chunks)
+		return nil
+	}
+
+	return fmt.Errorf("failed to parse knowledge base: does not match object or array schema")
 }
 
 // ---------- API Request Handlers ----------

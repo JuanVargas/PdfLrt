@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pdflrt-cache-v8';
+const CACHE_NAME = 'pdflrt-cache-v9';
 
 const urlsToCache = [
   '/',
@@ -28,6 +28,10 @@ self.addEventListener('fetch', event => {
   if (!event.request.url.startsWith('http')) return;
   // Bypass backend API calls (important: never cache POST API calls or syncs!)
   if (event.request.url.includes('/api/')) return;
+  // Bypass model directories (never intercept or try to cache massive models!)
+  if (event.request.url.includes('/models/')) return;
+  // Bypass raw database directory (loaded dynamically in memory)
+  if (event.request.url.includes('/PdfDir/')) return;
 
   event.respondWith(
     caches.match(event.request, { ignoreSearch: true })

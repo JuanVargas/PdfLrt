@@ -35,8 +35,10 @@ try {
     console.error("[Worker] Failed to define importScripts polyfill:", e);
 }
 
-// Force CDN downloads for transformers.js models (cached in browser cache storage)
-env.allowLocalModels = false;
+// Enable local model loading for offline same-origin serving from Go backend
+env.allowLocalModels = true;
+env.allowRemoteModels = false; // Disable remote HF downloads to ensure strictly offline operations
+env.localModelPath = '/models/';
 
 let embedder = null;
 let llmInference = null;
@@ -107,12 +109,11 @@ self.onmessage = async (event) => {
             try {
                 embedder = await pipeline('feature-extraction', embedderModel, {
                     ...embedOptions,
-                    device: targetDevice === 'webgpu' ? 'webgpu' : 'wasm',
-                    dtype: targetDevice === 'webgpu' ? 'fp32' : 'fp32'
+                    device: targetDevice === 'webgpu' ? 'webgpu' : 'wasm'
                 });
                 self.postMessage({ status: 'info', message: 'Embedding model loaded successfully.' });
             } catch (embedErr) {
-                console.warn('Embedding load failed on WebGPU, falling back to WASM:', embedErr);
+                console.warn('Embedding load failed, falling back to WASM:', embedErr);
                 embedder = await pipeline('feature-extraction', embedderModel, {
                     ...embedOptions,
                     device: 'wasm'

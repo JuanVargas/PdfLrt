@@ -5,7 +5,7 @@ REM Prevent Git Bash/MSYS from auto-translating Linux-style container paths (lik
 set MSYS_NO_PATHCONV=1
 
 echo 🐳 Building/Verifying the PdfLrt Ingestion Docker Image...
-docker build -t pdflrt-ingest -f Dockerfile .
+docker build --network=host -t pdflrt-ingest -f Dockerfile .
 if %errorlevel% neq 0 (
     echo ❌ Docker build failed!
     exit /b %errorlevel%
@@ -18,7 +18,7 @@ if not exist "%USERPROFILE%\.cache\huggingface" mkdir "%USERPROFILE%\.cache\hugg
 echo 🚀 Running ingestion container...
 REM -v "%cd%:/app" mounts the current project directory so the script can read PDFs and write knowledge_base.json
 REM -v "%USERPROFILE%\.cache\huggingface:/root/.cache/huggingface" mounts the HuggingFace cache directory so model downloads are persisted on the host machine
-docker run --rm ^
+docker run --rm --network=host ^
   -v "%cd%:/app" ^
   -v "%USERPROFILE%\.cache\huggingface:/root/.cache/huggingface" ^
   -w /app ^

@@ -200,8 +200,24 @@ async function loadKnowledgeBaseJSON() {
 
         kbData = await res.json();
         
-        const chunksCount = kbData.chunks ? kbData.chunks.length : 0;
-        const figuresCount = kbData.figures ? kbData.figures.length : 0;
+        // Normalize loaded kbData to support older flat-array format compatibility
+        if (Array.isArray(kbData)) {
+            kbData = {
+                chunks: kbData,
+                figures: []
+            };
+        } else if (!kbData || typeof kbData !== 'object') {
+            kbData = {
+                chunks: [],
+                figures: []
+            };
+        } else {
+            if (!kbData.chunks) kbData.chunks = [];
+            if (!kbData.figures) kbData.figures = [];
+        }
+        
+        const chunksCount = kbData.chunks.length;
+        const figuresCount = kbData.figures.length;
         
         loadedChunksText.innerHTML = `Chunks Loaded: ${chunksCount}`;
         loadedFiguresText.innerHTML = `Figures Extracted: ${figuresCount}`;

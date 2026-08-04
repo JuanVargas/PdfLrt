@@ -5,7 +5,7 @@
 set -e
 
 echo "🐳 Building/Verifying the PdfLrt Ingestion Docker Image..."
-docker build -t pdflrt-ingest -f Dockerfile .
+docker build --network=host -t pdflrt-ingest -f Dockerfile .
 
 # Ensure the PdfDir and Host HuggingFace cache directories exist
 mkdir -p PdfDir
@@ -14,7 +14,7 @@ mkdir -p "$HOME/.cache/huggingface"
 echo "🚀 Running ingestion container..."
 # -v "$(pwd):/app" mounts the current project directory so the script can read PDFs and write knowledge_base.json
 # -v "$HOME/.cache/huggingface:/root/.cache/huggingface" mounts the HuggingFace cache directory so model downloads are persisted on the host machine
-docker run --rm \
+docker run --rm --network=host \
   -v "$(pwd):/app" \
   -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
   -w /app \
