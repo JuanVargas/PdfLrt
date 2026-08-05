@@ -1,23 +1,15 @@
 package main
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/sha1"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
-	"math/big"
 	"mime"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -27,8 +19,7 @@ import (
 
 // ---------- Config & Env ----------
 var (
-	httpPort  = getEnv("HTTP_PORT", "8085")
-	httpsPort = getEnv("HTTPS_PORT", "8443")
+	httpPort = getEnv("HTTP_PORT", "8080")
 )
 
 func getEnv(key, defaultVal string) string {
@@ -74,187 +65,7 @@ var (
 
 var server *http.Server
 
-// ---------- SSL Certificate Auto-Generation ----------
-func savePEM(path string, pemType string, bytes []byte) error {
-	block := &pem.Block{
-		Type:  pemType,
-		Bytes: bytes,
-	}
-	return os.WriteFile(path, pem.EncodeToMemory(block), 0644)
-}
-
-func loadPEM(path string) ([]byte, error) {
-	bytes, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	block, _ := pem.Decode(bytes)
-	if block == nil {
-		return nil, fmt.Errorf("failed to decode PEM block in %s", path)
-	}
-	return block.Bytes, nil
-}
-
-func saveECPrivateKey(path string, key *ecdsa.PrivateKey) error {
-	bytes, err := x509.MarshalECPrivateKey(key)
-	if err != nil {
-		return err
-	}
-	return savePEM(path, "EC PRIVATE KEY", bytes)
-}
-
-func loadECPrivateKey(path string) (*ecdsa.PrivateKey, error) {
-	bytes, err := loadPEM(path)
-	if err != nil {
-		return nil, err
-	}
-	return x509.ParseECPrivateKey(bytes)
-}
-
-func loadCertificate(path string) (*x509.Certificate, error) {
-	bytes, err := loadPEM(path)
-	if err != nil {
-		return nil, err
-	}
-	return x509.ParseCertificate(bytes)
-}
-
-func generateCerts() error {
-	var ips []net.IP
-	ips = append(ips, net.ParseIP("127.0.0.1"), net.ParseIP("::1"))
-	ifaces, _ := net.Interfaces()
-	for _, i := range ifaces {
-		addrs, _ := i.Addrs()
-		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			if ip != nil {
-				ips = append(ips, ip)
-			}
-		}
-	}
-
-	var caPriv *ecdsa.PrivateKey
-	var caTemplate *x509.Certificate
-	var err error
-	needsNewCA := false
-
-	if _, err := os.Stat("ca.pem"); err == nil {
-		if _, err := os.Stat("ca.key"); err == nil {
-			caPriv, err = loadECPrivateKey("ca.key")
-			if err == nil {
-				caTemplate, err = loadCertificate("ca.pem")
-			}
-			if err != nil {
-				fmt.Printf("⚠️ Error loading existing CA. Generating a new one: %v\n", err)
-				needsNewCA = true
-			}
-		} else {
-			needsNewCA = true
-		}
-	} else {
-		needsNewCA = true
-	}
-
-	if needsNewCA {
-		fmt.Println("Generating dedicated Root CA...")
-		caPriv, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		if err != nil {
-			return err
-		}
-		pubBytes, _ := x509.MarshalPKIXPublicKey(&caPriv.PublicKey)
-		hash := sha1.Sum(pubBytes)
-		caTemplate = &x509.Certificate{
-			SerialNumber: big.NewInt(2048),
-			Subject: pkix.Name{
-				Organization: []string{"PdfLrt Local System"},
-				CommonName:   "PdfLrt Root CA",
-			},
-			NotBefore:             time.Now().Add(-24 * time.Hour),
-			NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
-			IsCA:                  true,
-			KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
-			BasicConstraintsValid: true,
-			SubjectKeyId:          hash[:],
-		}
-		caBytes, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caPriv.PublicKey, caPriv)
-		if err != nil {
-			return err
-		}
-
-		_ = savePEM("ca.pem", "CERTIFICATE", caBytes)
-		_ = saveECPrivateKey("ca.key", caPriv)
-		caTemplate, _ = loadCertificate("ca.pem")
-	}
-
-	needsNewServerCert := false
-	if _, err := os.Stat("cert.pem"); err != nil {
-		needsNewServerCert = true
-	} else if _, err := os.Stat("key.pem"); err != nil {
-		needsNewServerCert = true
-	} else if needsNewCA {
-		needsNewServerCert = true
-	} else {
-		cert, err := loadCertificate("cert.pem")
-		if err != nil {
-			needsNewServerCert = true
-		} else {
-			if time.Now().After(cert.NotAfter) || time.Now().Add(30*24*time.Hour).After(cert.NotAfter) {
-				needsNewServerCert = true
-			} else {
-				certIPs := make(map[string]bool)
-				for _, ip := range cert.IPAddresses {
-					certIPs[ip.String()] = true
-				}
-				for _, ip := range ips {
-					if !certIPs[ip.String()] {
-						needsNewServerCert = true
-						break
-					}
-				}
-			}
-		}
-	}
-
-	if needsNewServerCert {
-		fmt.Println("Generating Server Certificate signed by Root CA...")
-		priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		if err != nil {
-			return err
-		}
-
-		certTemplate := x509.Certificate{
-			SerialNumber: big.NewInt(1),
-			Subject: pkix.Name{
-				Organization: []string{"PdfLrt Local System"},
-				CommonName:   "PdfLrt Server Leaf",
-			},
-			NotBefore:             time.Now().Add(-24 * time.Hour),
-			NotAfter:              time.Now().Add(365 * 24 * time.Hour),
-			KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-			ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-			BasicConstraintsValid: true,
-			IPAddresses:           ips,
-			DNSNames:              []string{"localhost"},
-		}
-
-		certBytes, err := x509.CreateCertificate(rand.Reader, &certTemplate, caTemplate, &priv.PublicKey, caPriv)
-		if err != nil {
-			return err
-		}
-
-		_ = savePEM("cert.pem", "CERTIFICATE", certBytes)
-		_ = saveECPrivateKey("key.pem", priv)
-		fmt.Println("✅ Server certs regenerated successfully.")
-	}
-
-	return nil
-}
+// Certificate generation deleted for pure HTTP execution
 
 // ---------- Read/Load Knowledge Base Statistics ----------
 func loadKnowledgeBaseStats() error {
@@ -275,28 +86,36 @@ func loadKnowledgeBaseStats() error {
 		return fmt.Errorf("failed to read knowledge base file: %v", err)
 	}
 
-	// Try parsing as the new format (object with chunks and figures)
 	var tempKB struct {
 		Chunks  []interface{} `json:"chunks"`
 		Figures []interface{} `json:"figures"`
 	}
-	if err := json.Unmarshal(data, &tempKB); err == nil {
-		kbCount.Chunks = len(tempKB.Chunks)
-		kbCount.Figures = len(tempKB.Figures)
-		fmt.Printf("📂 Knowledge Base stats loaded (new format): %d text chunks and %d visual assets.\n", kbCount.Chunks, kbCount.Figures)
-		return nil
+	if err := json.Unmarshal(data, &tempKB); err != nil {
+		return fmt.Errorf("failed to parse knowledge base: %v", err)
 	}
 
-	// Try parsing as the old format (flat array of chunks)
-	var tempChunks []interface{}
-	if err := json.Unmarshal(data, &tempChunks); err == nil {
-		kbCount.Chunks = len(tempChunks)
-		kbCount.Figures = 0
-		fmt.Printf("📂 Knowledge Base stats loaded (old flat array format): %d text chunks and 0 visual assets.\n", kbCount.Chunks)
-		return nil
-	}
+	kbCount.Chunks = len(tempKB.Chunks)
+	kbCount.Figures = len(tempKB.Figures)
+	fmt.Printf("📂 Knowledge Base stats loaded: %d text chunks and %d visual assets.\n", kbCount.Chunks, kbCount.Figures)
+	return nil
+}
 
-	return fmt.Errorf("failed to parse knowledge base: does not match object or array schema")
+// ---------- API Response Helpers ----------
+
+type APIResponse struct {
+	Status  string `json:"status,omitempty"`
+	Message string `json:"message,omitempty"`
+	Error   string `json:"error,omitempty"`
+	Chunks  int    `json:"chunks"`
+	Figures int    `json:"figures"`
+	File    string `json:"file,omitempty"`
+}
+
+func writeJSON(w http.ResponseWriter, status int, data APIResponse) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 // ---------- API Request Handlers ----------
@@ -339,49 +158,48 @@ func handleListPDFs(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleReloadIndex(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-
 	if err := loadKnowledgeBaseStats(); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(fmt.Sprintf(`{"error": "%s"}`, err.Error())))
+		writeJSON(w, http.StatusInternalServerError, APIResponse{Error: err.Error()})
 		return
 	}
 
 	kbMutex.RLock()
 	defer kbMutex.RUnlock()
 
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(fmt.Sprintf(`{"status": "success", "chunks": %d, "figures": %d}`, kbCount.Chunks, kbCount.Figures)))
+	writeJSON(w, http.StatusOK, APIResponse{Status: "success", Chunks: kbCount.Chunks, Figures: kbCount.Figures})
 }
 
 func handleSyncKnowledgeBase(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-
-	// Trigger build_knowledge_base.py
-	fmt.Println("🔄 Triggering knowledge base synchronization...")
-
-	// Create context with a timeout of 10 minutes for large files
-	cmd := exec.Command("python3", "build_knowledge_base.py")
+	// Trigger build_knowledge_base.py via the Docker script
+	fmt.Println("🔄 Triggering knowledge base synchronization via Docker container...")
+	
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd", "/c", "run_ingest.bat")
+	} else {
+		cmd = exec.Command("/bin/bash", "./run_ingest.sh")
+	}
+	
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		fmt.Printf("❌ Ingestion script failed: %v\nOutput:\n%s\n", err, string(output))
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(fmt.Sprintf(`{"status": "error", "message": "%s: %s"}`, err.Error(), strings.ReplaceAll(string(output), "\n", " "))))
+		writeJSON(w, http.StatusInternalServerError, APIResponse{
+			Status:  "error",
+			Error:   err.Error(),
+			Message: string(output),
+		})
 		return
 	}
 
 	fmt.Println("✅ Knowledge base built successfully.")
-
+	
 	// Reload stats
 	_ = loadKnowledgeBaseStats()
 
 	kbMutex.RLock()
 	defer kbMutex.RUnlock()
 
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(fmt.Sprintf(`{"status": "success", "chunks": %d, "figures": %d}`, kbCount.Chunks, kbCount.Figures)))
+	writeJSON(w, http.StatusOK, APIResponse{Status: "success", Chunks: kbCount.Chunks, Figures: kbCount.Figures})
 }
 
 func handleSaveDialog(w http.ResponseWriter, r *http.Request) {
@@ -448,10 +266,7 @@ func handleSaveDialog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Printf("✅ Saved dialog session to %s with %d entries.\n", targetFile, len(dialogs))
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(fmt.Sprintf(`{"status": "success", "file": "%s"}`, filename)))
+	writeJSON(w, http.StatusOK, APIResponse{Status: "success", File: filename})
 }
 
 func downloadWasmFiles() {
@@ -462,6 +277,7 @@ func downloadWasmFiles() {
 		filename string
 		url      string
 	}{
+		{"tasks-genai.js", "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai"},
 		{"genai_wasm_internal.js", "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai/wasm/genai_wasm_internal.js"},
 		{"genai_wasm_internal.wasm", "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai/wasm/genai_wasm_internal.wasm"},
 		{"ort-wasm-simd-threaded.wasm", "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.wasm"},
@@ -479,18 +295,18 @@ func downloadWasmFiles() {
 				fmt.Printf("Failed to download %s: %v\n", dl.filename, err)
 				continue
 			}
-
+			
 			out, err := os.Create(path)
 			if err != nil {
 				resp.Body.Close()
 				fmt.Printf("Failed to create file %s: %v\n", dl.filename, err)
 				continue
 			}
-
+			
 			_, err = io.Copy(out, resp.Body)
 			out.Close()
 			resp.Body.Close()
-
+			
 			if err != nil {
 				fmt.Printf("Failed to save %s: %v\n", dl.filename, err)
 			} else {
@@ -516,16 +332,9 @@ func main() {
 	// Pre-load current knowledge base stats if file exists
 	_ = loadKnowledgeBaseStats()
 
-	// Ensure SSL certificates exist for secure contexts (HTTPS)
-	if err := generateCerts(); err != nil {
-		fmt.Printf("Fatal: failed to generate certificates: %v\n", err)
-		os.Exit(1)
-	}
-
 	// File Server for local static files
 	fs := http.FileServer(http.Dir("."))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("[Static Server] %s %s\n", r.Method, r.URL.Path)
 		// Set headers to support offline caching and WebAssembly threads/WebGPU
 		w.Header().Set("Service-Worker-Allowed", "/")
 		// COOP and COEP are critical for SharedArrayBuffer support in browsers
@@ -541,37 +350,18 @@ func main() {
 	http.HandleFunc("/api/sync", handleSyncKnowledgeBase)
 	http.HandleFunc("/api/savedialog", handleSaveDialog)
 
-	// Run HTTP redirect to HTTPS
-	go func() {
-		fmt.Printf("Redirect server starting on http://localhost:%s\n", httpPort)
-		err := http.ListenAndServe(":"+httpPort, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			host, _, _ := net.SplitHostPort(r.Host)
-			if host == "" {
-				host = r.Host
-			}
-			target := "https://" + host + ":" + httpsPort + r.URL.Path
-			if r.URL.RawQuery != "" {
-				target += "?" + r.URL.RawQuery
-			}
-			http.Redirect(w, r, target, http.StatusMovedPermanently)
-		}))
-		if err != nil {
-			fmt.Printf("Redirect server error: %v\n", err)
-		}
-	}()
-
 	fmt.Println("========================================================================")
-	fmt.Printf("🚀 PdfLrt HTTPS Server starting on https://localhost:%s\n", httpsPort)
+	fmt.Printf("🚀 PdfLrt HTTP Server starting on http://localhost:%s\n", httpPort)
 	fmt.Println("========================================================================")
 	fmt.Println("💡 WebGPU Linux & Nvidia Optimization Tip:")
 	fmt.Println("   Chrome may behave erratically or disable WebGPU on Linux with Nvidia GPUs.")
 	fmt.Println("   To run with WebGPU enabled safely without flickering or lag, run:")
 	fmt.Println("   google-chrome --enable-unsafe-webgpu --enable-features=Vulkan --ozone-platform=x11")
 	fmt.Println("========================================================================")
-	server = &http.Server{Addr: ":" + httpsPort}
-	err := server.ListenAndServeTLS("cert.pem", "key.pem")
+	server = &http.Server{Addr: ":" + httpPort}
+	err := server.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
-		fmt.Printf("HTTPS Server failed: %v\n", err)
+		fmt.Printf("HTTP Server failed: %v\n", err)
 		os.Exit(1)
 	}
 }

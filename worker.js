@@ -1,7 +1,7 @@
 // worker.js - PdfLrt WebGPU/WASM Offline Inference Worker using LiteRT
 
 import { pipeline, env } from './transformers.min.js';
-import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai';
+import { FilesetResolver, LlmInference } from './wasm/tasks-genai.js';
 
 // Polyfill importScripts for ES Module Workers (required for MediaPipe WASM loading)
 try {

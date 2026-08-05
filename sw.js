@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pdflrt-cache-v9';
+const CACHE_NAME = 'pdflrt-cache-v10';
 
 const urlsToCache = [
   '/',
@@ -9,7 +9,7 @@ const urlsToCache = [
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap'
+  '/wasm/tasks-genai.js'
 ];
 
 self.addEventListener('install', event => {

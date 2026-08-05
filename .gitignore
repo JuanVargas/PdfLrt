@@ -12,14 +12,15 @@ pdflrt
 pdflrt.exe
 pdflrt_linux
 pdflrt_mac
+pdflrt_offline_release.tar.gz
+pdflrt_offline_release.zip
 
 # Python Cache
 __pycache__/
 *.pyc
 
 # Local PDF files (original manuals) and the generated database
-PdfDir/*.pdf
-PdfDir/knowledge_base.json
+PdfDir/
 
 # Local dialogue exports
 Dialogs/

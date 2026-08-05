@@ -111,18 +111,29 @@ def process_pdfs():
                         
                         print(f"  -> Found Visual Element {fig_id} on page {page_num + 1}")
                         
-                        # Render the full page to base64 image (resolution multiplier 1.5)
+                        # Save the page as a JPEG file
                         try:
+                            # Create a subfolder for figures
+                            figures_dir = os.path.join(PDF_DIR, "figures")
+                            os.makedirs(figures_dir, exist_ok=True)
+                            
                             pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
-                            img_data = pix.tobytes("jpeg")
-                            b64 = base64.b64encode(img_data).decode('utf-8')
-                            img_uri = f"data:image/jpeg;base64,{b64}"
+                            # Create a clean, safe filename
+                            safe_source = re.sub(r'[^a-zA-Z0-9._-]', '_', filename)
+                            safe_fig_id = re.sub(r'[^a-zA-Z0-9._-]', '_', fig_id)
+                            image_filename = f"{safe_source}_page{page_num + 1}_{safe_fig_id}.jpg"
+                            image_path = os.path.join(figures_dir, image_filename)
+                            
+                            pix.save(image_path)
+                            
+                            # Use browser-resolvable relative URL
+                            relative_img_uri = f"/PdfDir/figures/{image_filename}"
                             
                             kb["figures"].append({
                                 "source": filename,
                                 "id": fig_id,
                                 "caption": line_clean,
-                                "image": img_uri,
+                                "image": relative_img_uri,
                                 "page": page_num + 1
                             })
                         except Exception as render_err:
