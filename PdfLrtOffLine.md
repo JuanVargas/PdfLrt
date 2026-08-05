@@ -1,10 +1,24 @@
 # PdfLrt Offline Operation Guide
 
+## Introductory Terms (PWA, CDN, Service Worker)
+
 Progressive Web Apps (**PWAs**) are web applications that can deliver a native, app-like experience while operating in environments with NO Internet access. 
 
-PWAs synthetize the convergence of web accessibility and native app performance, delivering a decent experience directly through a user's browser. By leveraging modern web technology, PWAs can provide features like offline functionality, push notifications, and device installation without the friction of downloading from an app store.
+PWAs offer web accessibility and relatively good performance, delivering a decent experience directly through a user's browser. By leveraging a suite of modern web technologies, PWAs provide features like offline functionality, push notifications, and device installation without the friction of havijng to download resources from the internet and/or an app store.
 
-**PdfLrt** is designed to operate as a PWA. This document summariez how to run PdfLrt in offline environments (without access to internet connections) on Windows, macOS, Linux, and iOS. It also details causes of possible failures and how to resolve such situations to ensure that PdfLrt can operate as a TCP/IP network-independent system.
+A **CDN** dependency occurs when a web application tries to connect to external Content Delivery Networks to obtain critical assets — such as JS APIs and Libs, CSS frameworks, or fonts—at runtime, rather than serving them directly from the application's own origin server.
+
+While CDNs are OK for traditional web development due to geo-caching and reduced server load, they introduce significant friction when building PWAs.
+
+The defining characteristic of a PWA is its ability to operate even under no Wifi or Internet access. This is done through a piece of code that implements a **Service Worker** which is nothing else than a background script that intercepts network requests and serves assets from a local cache when the user is offline or on a flaky connection.
+
+If a PWA has a CDN dependency, the Service Worker will try  to reach out to a third-party server to cache those files. This would create a collision between the PWA's "offline-first" and the cross-origin network security.
+
+---
+
+## PdfLrt
+
+**PdfLrt** is designed to operate as a PWA. This document summariez how to run PdfLrt in offline environments (without access to internet connections) on Linux, Windows, macOS, and iOS. It also provides a summary of possible failures and how to resolve such situations in order to ensure that PdfLrt can operate even in the absence of WiFi and/or Internet access.
 
 ---
 
