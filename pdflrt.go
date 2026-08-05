@@ -19,7 +19,8 @@ import (
 
 // ---------- Config & Env ----------
 var (
-	httpPort = getEnv("HTTP_PORT", "8080")
+	httpPort  = getEnv("HTTP_PORT", "8080")
+	httpsPort = getEnv("HTTPS_PORT", "8443")
 )
 
 func getEnv(key, defaultVal string) string {
@@ -350,14 +351,38 @@ func main() {
 	http.HandleFunc("/api/sync", handleSyncKnowledgeBase)
 	http.HandleFunc("/api/savedialog", handleSaveDialog)
 
+	// Check if SSL certs exist
+	certFile := "cert.pem"
+	keyFile := "key.pem"
+	hasTLS := false
+	if _, err := os.Stat(certFile); err == nil {
+		if _, err := os.Stat(keyFile); err == nil {
+			hasTLS = true
+		}
+	}
+
 	fmt.Println("========================================================================")
 	fmt.Printf("🚀 PdfLrt HTTP Server starting on http://localhost:%s\n", httpPort)
+	if hasTLS {
+		fmt.Printf("🔒 PdfLrt HTTPS Server starting on https://localhost:%s\n", httpsPort)
+	}
 	fmt.Println("========================================================================")
 	fmt.Println("💡 WebGPU Linux & Nvidia Optimization Tip:")
 	fmt.Println("   Chrome may behave erratically or disable WebGPU on Linux with Nvidia GPUs.")
 	fmt.Println("   To run with WebGPU enabled safely without flickering or lag, run:")
 	fmt.Println("   google-chrome --enable-unsafe-webgpu --enable-features=Vulkan --ozone-platform=x11")
 	fmt.Println("========================================================================")
+
+	if hasTLS {
+		httpsServer := &http.Server{Addr: ":" + httpsPort}
+		go func() {
+			err := httpsServer.ListenAndServeTLS(certFile, keyFile)
+			if err != nil && err != http.ErrServerClosed {
+				fmt.Printf("HTTPS Server failed: %v\n", err)
+			}
+		}()
+	}
+
 	server = &http.Server{Addr: ":" + httpPort}
 	err := server.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
