@@ -623,9 +623,22 @@ function handleEmbedResult(queryEmbedding) {
         return { chunk, score: sim + boost };
     });
 
-    // Sort descending and slice top 4 chunks
+    // Adjust context size based on current auto-retry level (Level 0: 4 chunks/3500 chars, Level 1: 2 chunks/1800 chars, Level 2: 1 chunk/900 chars)
+    const retryLevel = window.currentRetryLevel || 0;
+    let maxChunksCount = 4;
+    let maxCharLimit = 3500;
+    
+    if (retryLevel === 1) {
+        maxChunksCount = 2;
+        maxCharLimit = 1800;
+    } else if (retryLevel >= 2) {
+        maxChunksCount = 1;
+        maxCharLimit = 900;
+    }
+
+    // Sort descending and slice top chunks based on retry level
     scoredChunks.sort((a, b) => b.score - a.score);
-    const topChunks = scoredChunks.slice(0, 4).map(c => c.chunk);
+    const topChunks = scoredChunks.slice(0, maxChunksCount).map(c => c.chunk);
     window.currentTopChunks = topChunks;
 
     // Update context snippets panel (RAG transparency)
@@ -640,19 +653,26 @@ function handleEmbedResult(queryEmbedding) {
         historyContainer.appendChild(item);
     });
 
-    // Build context prompt
-    const context = topChunks.map(c => c.text).join('\n\n');
+    // Build context prompt with length safety limit based on retry level
+    let rawContext = topChunks.map(c => c.text).join('\n\n');
+    if (rawContext.length > maxCharLimit) {
+        rawContext = rawContext.substring(0, maxCharLimit) + "\n...[Context auto-truncated for token safety]";
+    }
+    const context = rawContext;
     const modelUrl = modelPathInput.value.toLowerCase();
+    const isBatch = !!window.isBatchProcessing;
     
     let formattedPrompt = "";
     if (modelUrl.includes('llama')) {
         // Llama 3 / 3.2 Chat template
         formattedPrompt = `<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful, expert technical manual assistant. Use the following retrieved context snippets from the manuals to answer the user's question. If the answer cannot be found in the context, say "I don't know based on the provided documents." Do not invent facts. Cite the source document name and the page number for the facts you provide (e.g. "According to [document_name] (Page [page_num])...").\n\nContext:\n${context}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n`;
         
-        // Add dialogue history
-        const historyWindow = chatMessageHistory.slice(-2);
-        for (const h of historyWindow) {
-            formattedPrompt += `User: ${h.q}\nAssistant: ${h.a}\n`;
+        // Add dialogue history for interactive chat (excluded during batch questions processing)
+        if (!isBatch) {
+            const historyWindow = chatMessageHistory.slice(-2);
+            for (const h of historyWindow) {
+                formattedPrompt += `User: ${h.q}\nAssistant: ${h.a}\n`;
+            }
         }
         
         formattedPrompt += `Question: ${text}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n`;
@@ -660,10 +680,11 @@ function handleEmbedResult(queryEmbedding) {
         // Gemma 4 Instruct template with native system prompt support
         formattedPrompt = `<|turn>system\nYou are a helpful, expert technical manual assistant. Use the following retrieved context snippets from the manuals to answer the user's question. If the answer cannot be found in the context, say "I don't know based on the provided documents." Do not invent facts. Cite the source document name and the page number for the facts you provide (e.g. "According to [document_name] (Page [page_num])...").\n\nContext:\n${context}<turn|>\n`;
         
-        // Add dialogue history
-        const historyWindow = chatMessageHistory.slice(-2);
-        for (const h of historyWindow) {
-            formattedPrompt += `<|turn>user\n${h.q}<turn|>\n<|turn>model\n${h.a}<turn|>\n`;
+        if (!isBatch) {
+            const historyWindow = chatMessageHistory.slice(-2);
+            for (const h of historyWindow) {
+                formattedPrompt += `<|turn>user\n${h.q}<turn|>\n<|turn>model\n${h.a}<turn|>\n`;
+            }
         }
         
         formattedPrompt += `<|turn>user\n${text}<turn|>\n<|turn>model\n`;
@@ -679,9 +700,11 @@ ${context}
 
 History:
 `;
-        const historyWindow = chatMessageHistory.slice(-3);
-        for (const h of historyWindow) {
-            formattedPrompt += `User: ${h.q}\nAssistant: ${h.a}\n`;
+        if (!isBatch) {
+            const historyWindow = chatMessageHistory.slice(-3);
+            for (const h of historyWindow) {
+                formattedPrompt += `User: ${h.q}\nAssistant: ${h.a}\n`;
+            }
         }
         formattedPrompt += `\nQuestion: ${text}<end_of_turn>\n<start_of_turn>model\n`;
     }
@@ -821,7 +844,12 @@ function initInferenceWorker() {
             if (window.currentBatchResolver) {
                 const resolve = window.currentBatchResolver;
                 window.currentBatchResolver = null;
-                resolve({ q: window.currentQueryText || "", a: `Error: ${error}`, sources: "" });
+                resolve({ 
+                    q: window.currentQueryText || "", 
+                    a: `Error: ${error}`, 
+                    sources: "ERROR - FAILED TO GENERATE",
+                    is_error: true 
+                });
             }
 
             const isWebGPUError = error.includes("navigator.gpu") || error.includes("WebGPU") || error.includes("adapter");
@@ -989,6 +1017,47 @@ function answerQuestionPromise(qText) {
     });
 }
 
+async function answerQuestionWithAutoRetry(qText, maxRetries = 2) {
+    for (let level = 0; level <= maxRetries; level++) {
+        window.currentRetryLevel = level;
+        if (level > 0) {
+            appendMessage(false, `⚠️ **Auto-Retry Attempt ${level}/${maxRetries}**: Retrying question *"${qText}"* with truncated context window for token safety...`, [], "SYSTEM");
+            if (worker) {
+                worker.postMessage({ command: 'reset' });
+                await new Promise(res => setTimeout(res, 400));
+            }
+        }
+
+        try {
+            const result = await answerQuestionPromise(qText);
+            const isErr = !!result.is_error || (typeof result.a === 'string' && result.a.startsWith("Error:"));
+            if (!isErr) {
+                window.currentRetryLevel = 0;
+                return result;
+            }
+            if (level < maxRetries) {
+                console.warn(`Question "${qText}" failed at level ${level}. Retrying with reduced context...`);
+                continue;
+            }
+            window.currentRetryLevel = 0;
+            return result;
+        } catch (err) {
+            console.error(`Question "${qText}" threw error at level ${level}:`, err);
+            if (level < maxRetries) {
+                console.warn(`Retrying question after error...`);
+                continue;
+            }
+            window.currentRetryLevel = 0;
+            return {
+                q: qText,
+                a: `Error generating response: ${err.message}`,
+                sources: "ERROR - FAILED TO GENERATE",
+                is_error: true
+            };
+        }
+    }
+}
+
 if (btnBatchQuestions) {
     btnBatchQuestions.addEventListener('click', async () => {
         const filename = prompt("Enter Excel questions file name/path (e.g. MyQuestions.xlsx in ./Dialogs):", "MyQuestions.xlsx");
@@ -1015,27 +1084,50 @@ if (btnBatchQuestions) {
             appendMessage(false, `📑 **Batch Processing Started**: Loaded **${questions.length}** question(s) from \`${resolvedPath}\`. Starting sequential Q&A...`, [], "SYSTEM");
 
             const batchResults = [];
+            window.isBatchProcessing = true;
 
-            for (let i = 0; i < questions.length; i++) {
-                const qText = questions[i];
-                
-                // Alert user which question is being answered
-                appendMessage(false, `⏳ **[Question ${i + 1}/${questions.length}]** Answering: *"${qText}"*`, [], "SYSTEM");
+            try {
+                for (let i = 0; i < questions.length; i++) {
+                    const qText = questions[i];
+                    
+                    // Alert user which question is being answered
+                    appendMessage(false, `⏳ **[Question ${i + 1}/${questions.length}]** Answering: *"${qText}"*`, [], "SYSTEM");
 
-                try {
-                    const result = await answerQuestionPromise(qText);
-                    batchResults.push(result);
-                } catch (err) {
-                    console.error(`Error answering question ${i + 1}:`, err);
-                    batchResults.push({
-                        q: qText,
-                        a: `Error generating response: ${err.message}`,
-                        sources: ""
-                    });
+                    try {
+                        const result = await answerQuestionWithAutoRetry(qText);
+                        const isErr = !!result.is_error || (typeof result.a === 'string' && result.a.startsWith("Error:"));
+                        batchResults.push({
+                            q: result.q || qText,
+                            a: result.a || "",
+                            sources: result.sources || (isErr ? "ERROR - FAILED TO GENERATE" : ""),
+                            is_error: isErr
+                        });
+
+                        if (isErr && worker) {
+                            console.warn(`[Batch] Question ${i + 1} produced an error after retries. Resetting worker engine state for next question...`);
+                            worker.postMessage({ command: 'reset' });
+                            await new Promise(res => setTimeout(res, 500));
+                        }
+                    } catch (err) {
+                        console.error(`Error answering question ${i + 1}:`, err);
+                        batchResults.push({
+                            q: qText,
+                            a: `Error generating response: ${err.message}`,
+                            sources: "ERROR - FAILED TO GENERATE",
+                            is_error: true
+                        });
+                        if (worker) {
+                            worker.postMessage({ command: 'reset' });
+                            await new Promise(res => setTimeout(res, 500));
+                        }
+                    }
+
+                    // Brief cooldown delay to allow LiteRT WebGPU worker state cleanup between queries
+                    await new Promise(resolve => setTimeout(resolve, 300));
                 }
-
-                // Brief cooldown delay to allow LiteRT WebGPU worker state cleanup between queries
-                await new Promise(resolve => setTimeout(resolve, 300));
+            } finally {
+                window.isBatchProcessing = false;
+                window.currentRetryLevel = 0;
             }
 
             appendMessage(false, `✅ **Batch Processing Completed**: All **${questions.length}** questions have been processed! Writing response file...`, [], "SYSTEM");

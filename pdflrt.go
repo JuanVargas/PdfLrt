@@ -54,6 +54,7 @@ type DialogEntry struct {
 	Q       string `json:"q"`
 	A       string `json:"a"`
 	Sources string `json:"sources"`
+	IsError bool   `json:"is_error,omitempty"`
 }
 
 // Global Memory Vector Database Metadata
@@ -439,19 +440,34 @@ func handleSaveQuestionsResponses(w http.ResponseWriter, r *http.Request) {
 	_ = f.SetCellValue("Sheet1", "B1", "Answers")
 	_ = f.SetCellValue("Sheet1", "C1", "Sources")
 
-	style, err := f.NewStyle(&excelize.Style{
+	headerStyle, err := f.NewStyle(&excelize.Style{
 		Font: &excelize.Font{Bold: true, Color: "FFFFFF"},
 		Fill: excelize.Fill{Type: "pattern", Color: []string{"3B82F6"}, Pattern: 1},
 	})
 	if err == nil {
-		_ = f.SetCellStyle("Sheet1", "A1", "C1", style)
+		_ = f.SetCellStyle("Sheet1", "A1", "C1", headerStyle)
 	}
+
+	errStyle, errStyleErr := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true, Color: "991B1B"},
+		Fill: excelize.Fill{Type: "pattern", Color: []string{"FEE2E2"}, Pattern: 1},
+	})
 
 	for i, entry := range req.Entries {
 		row := i + 2
 		_ = f.SetCellValue("Sheet1", fmt.Sprintf("A%d", row), entry.Q)
 		_ = f.SetCellValue("Sheet1", fmt.Sprintf("B%d", row), entry.A)
-		_ = f.SetCellValue("Sheet1", fmt.Sprintf("C%d", row), entry.Sources)
+		
+		sourcesVal := entry.Sources
+		isErr := entry.IsError || strings.HasPrefix(strings.TrimSpace(entry.A), "Error:") || strings.HasPrefix(strings.TrimSpace(entry.A), "Error generating response:")
+		if isErr && (sourcesVal == "" || sourcesVal == "ERROR - FAILED TO GENERATE") {
+			sourcesVal = "ERROR - FAILED TO GENERATE"
+		}
+		_ = f.SetCellValue("Sheet1", fmt.Sprintf("C%d", row), sourcesVal)
+
+		if isErr && errStyleErr == nil {
+			_ = f.SetCellStyle("Sheet1", fmt.Sprintf("A%d", row), fmt.Sprintf("C%d", row), errStyle)
+		}
 	}
 
 	_ = f.SetColWidth("Sheet1", "A", "A", 40)

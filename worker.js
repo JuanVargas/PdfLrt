@@ -139,6 +139,8 @@ self.onmessage = async (event) => {
 
             // Initialize MediaPipe FilesetResolver for GenAI (LiteRT-LM Wasm) locally
             const genai = await FilesetResolver.forGenAiTasks(self.location.origin + "/wasm");
+            cachedGenai = genai;
+            cachedModelUrl = modelUrl;
 
             // Attempt to load the model (first GPU, fallback to CPU)
             try {
@@ -149,7 +151,7 @@ self.onmessage = async (event) => {
                             modelAssetPath: modelUrl,
                             delegate: 'GPU'
                         },
-                        maxTokens: 2048,
+                        maxTokens: 4096,
                         temperature: 0.3
                     });
                     self.postMessage({ status: 'ready', actualDevice: 'webgpu' });
@@ -163,6 +165,15 @@ self.onmessage = async (event) => {
         } catch (error) {
             console.error('Error loading models in worker:', error);
             self.postMessage({ status: 'error', error: error.message });
+        }
+    }
+
+    else if (command === 'reset') {
+        try {
+            await reinitLlmInference();
+            self.postMessage({ status: 'info', message: 'LiteRT LLM engine reset complete.' });
+        } catch (err) {
+            self.postMessage({ status: 'error', error: err.message });
         }
     }
 
@@ -209,6 +220,34 @@ self.onmessage = async (event) => {
         } catch (error) {
             console.error("LiteRT generation error:", error);
             self.postMessage({ status: 'error', error: error.message });
+            // Automatically reset broken MediaPipe graph state after an inference error so subsequent queries succeed
+            reinitLlmInference();
         }
     }
 };
+
+let cachedGenai = null;
+let cachedModelUrl = null;
+
+async function reinitLlmInference() {
+    if (!cachedGenai || !cachedModelUrl) return;
+    try {
+        console.log("[Worker] Re-initializing LiteRT LLM engine state after graph error/reset...");
+        if (llmInference) {
+            try { await llmInference.close(); } catch (e) {}
+            llmInference = null;
+        }
+        llmInference = await LlmInference.createFromOptions(cachedGenai, {
+            baseOptions: {
+                modelAssetPath: cachedModelUrl,
+                delegate: 'GPU'
+            },
+            maxTokens: 4096,
+            temperature: 0.3
+        });
+        console.log("[Worker] LiteRT LLM engine state re-initialized successfully.");
+    } catch (err) {
+        console.error("[Worker] Failed to re-initialize LiteRT LLM engine:", err);
+    }
+}
+
