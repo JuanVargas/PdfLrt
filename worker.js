@@ -197,7 +197,6 @@ self.onmessage = async (event) => {
                         accumulatedText += partialResult;
                     }
                 }
-                // Send streaming update to main thread (complete might be passed, but we don't rely solely on it)
                 self.postMessage({ 
                     status: 'token', 
                     text: accumulatedText, 
@@ -205,14 +204,10 @@ self.onmessage = async (event) => {
                 });
             });
 
-            // Once the generateResponse promise resolves, generation is guaranteed to be finished
-            self.postMessage({ 
-                status: 'token', 
-                text: accumulatedText, 
-                complete: true 
-            });
-            self.postMessage({ status: 'done' });
+            // Once generateResponse promise resolves, LiteRT engine is idle and finished
+            self.postMessage({ status: 'done', text: accumulatedText });
         } catch (error) {
+            console.error("LiteRT generation error:", error);
             self.postMessage({ status: 'error', error: error.message });
         }
     }

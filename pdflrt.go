@@ -51,8 +51,9 @@ type KnowledgeBase struct {
 }
 
 type DialogEntry struct {
-	Q string `json:"q"`
-	A string `json:"a"`
+	Q       string `json:"q"`
+	A       string `json:"a"`
+	Sources string `json:"sources"`
 }
 
 // Global Memory Vector Database Metadata
@@ -237,9 +238,10 @@ func handleSaveDialog(w http.ResponseWriter, r *http.Request) {
 		_ = f.Close()
 	}()
 
-	// Columns named "Questions" and "Answers" as requested
+	// Columns named "Questions", "Answers", "Sources"
 	_ = f.SetCellValue("Sheet1", "A1", "Questions")
 	_ = f.SetCellValue("Sheet1", "B1", "Answers")
+	_ = f.SetCellValue("Sheet1", "C1", "Sources")
 
 	// Apply headers styling
 	style, err := f.NewStyle(&excelize.Style{
@@ -247,18 +249,20 @@ func handleSaveDialog(w http.ResponseWriter, r *http.Request) {
 		Fill: excelize.Fill{Type: "pattern", Color: []string{"3B82F6"}, Pattern: 1},
 	})
 	if err == nil {
-		_ = f.SetCellStyle("Sheet1", "A1", "B1", style)
+		_ = f.SetCellStyle("Sheet1", "A1", "C1", style)
 	}
 
 	for i, entry := range dialogs {
 		row := i + 2
 		_ = f.SetCellValue("Sheet1", fmt.Sprintf("A%d", row), entry.Q)
 		_ = f.SetCellValue("Sheet1", fmt.Sprintf("B%d", row), entry.A)
+		_ = f.SetCellValue("Sheet1", fmt.Sprintf("C%d", row), entry.Sources)
 	}
 
 	// Set column widths for nice appearance
 	_ = f.SetColWidth("Sheet1", "A", "A", 40)
 	_ = f.SetColWidth("Sheet1", "B", "B", 60)
+	_ = f.SetColWidth("Sheet1", "C", "C", 40)
 
 	if err := f.SaveAs(targetFile); err != nil {
 		fmt.Printf("Error saving excel file: %v\n", err)
@@ -268,6 +272,204 @@ func handleSaveDialog(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("✅ Saved dialog session to %s with %d entries.\n", targetFile, len(dialogs))
 	writeJSON(w, http.StatusOK, APIResponse{Status: "success", File: filename})
+}
+
+type ReadQuestionsResp struct {
+	Status    string   `json:"status,omitempty"`
+	Error     string   `json:"error,omitempty"`
+	Questions []string `json:"questions,omitempty"`
+	FilePath  string   `json:"filepath,omitempty"`
+}
+
+func handleReadQuestions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Filename string `json:"filename"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(ReadQuestionsResp{Error: "Invalid JSON request"})
+		return
+	}
+
+	targetName := strings.TrimSpace(req.Filename)
+	if targetName == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(ReadQuestionsResp{Error: "Filename is required"})
+		return
+	}
+
+	// Try resolving file location
+	filePath := targetName
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		// Try in Dialogs folder
+		inDialogs := filepath.Join("Dialogs", targetName)
+		if _, err := os.Stat(inDialogs); err == nil {
+			filePath = inDialogs
+		} else {
+			// Try adding .xlsx extension if missing
+			if !strings.HasSuffix(strings.ToLower(targetName), ".xlsx") {
+				withExt := targetName + ".xlsx"
+				if _, err := os.Stat(withExt); err == nil {
+					filePath = withExt
+				} else if _, err := os.Stat(filepath.Join("Dialogs", withExt)); err == nil {
+					filePath = filepath.Join("Dialogs", withExt)
+				}
+			}
+		}
+	}
+
+	f, err := excelize.OpenFile(filePath)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(ReadQuestionsResp{Error: fmt.Sprintf("Failed to open file '%s': %v", targetName, err)})
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	sheetName := f.GetSheetName(0)
+	if sheetName == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(ReadQuestionsResp{Error: "Excel file has no sheets"})
+		return
+	}
+
+	rows, err := f.GetRows(sheetName)
+	if err != nil || len(rows) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(ReadQuestionsResp{Error: "Excel sheet is empty"})
+		return
+	}
+
+	// Find column index for header "Questions"
+	qColIndex := -1
+	headerRow := rows[0]
+	for colIdx, cell := range headerRow {
+		if strings.EqualFold(strings.TrimSpace(cell), "Questions") {
+			qColIndex = colIdx
+			break
+		}
+	}
+
+	if qColIndex == -1 {
+		// Fallback to column 0 if header "Questions" not explicitly found
+		qColIndex = 0
+	}
+
+	var questions []string
+	for i := 1; i < len(rows); i++ {
+		row := rows[i]
+		if qColIndex < len(row) {
+			qText := strings.TrimSpace(row[qColIndex])
+			if qText != "" {
+				questions = append(questions, qText)
+			}
+		}
+	}
+
+	if len(questions) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(ReadQuestionsResp{Error: "No questions found in the specified file"})
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(ReadQuestionsResp{
+		Status:    "success",
+		Questions: questions,
+		FilePath:  filePath,
+	})
+}
+
+type SaveBatchReq struct {
+	OriginalFile string        `json:"original_file"`
+	Entries      []DialogEntry `json:"entries"`
+}
+
+type SaveBatchResp struct {
+	Status string `json:"status,omitempty"`
+	Error  string `json:"error,omitempty"`
+	File   string `json:"file,omitempty"`
+}
+
+func handleSaveQuestionsResponses(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req SaveBatchReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(SaveBatchResp{Error: "Invalid JSON request"})
+		return
+	}
+
+	if len(req.Entries) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(SaveBatchResp{Error: "No responses to save"})
+		return
+	}
+
+	// Compute output filename: <original_dir>/<original_base>_Responses.xlsx
+	origPath := req.OriginalFile
+	if origPath == "" {
+		origPath = filepath.Join("Dialogs", "MyQuestions.xlsx")
+	}
+
+	dir := filepath.Dir(origPath)
+	base := filepath.Base(origPath)
+	ext := filepath.Ext(base)
+	nameWithoutExt := strings.TrimSuffix(base, ext)
+
+	outputFilename := fmt.Sprintf("%s_Responses%s", nameWithoutExt, ext)
+	outputFilePath := filepath.Join(dir, outputFilename)
+
+	f := excelize.NewFile()
+	defer func() { _ = f.Close() }()
+
+	_ = f.SetCellValue("Sheet1", "A1", "Questions")
+	_ = f.SetCellValue("Sheet1", "B1", "Answers")
+	_ = f.SetCellValue("Sheet1", "C1", "Sources")
+
+	style, err := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true, Color: "FFFFFF"},
+		Fill: excelize.Fill{Type: "pattern", Color: []string{"3B82F6"}, Pattern: 1},
+	})
+	if err == nil {
+		_ = f.SetCellStyle("Sheet1", "A1", "C1", style)
+	}
+
+	for i, entry := range req.Entries {
+		row := i + 2
+		_ = f.SetCellValue("Sheet1", fmt.Sprintf("A%d", row), entry.Q)
+		_ = f.SetCellValue("Sheet1", fmt.Sprintf("B%d", row), entry.A)
+		_ = f.SetCellValue("Sheet1", fmt.Sprintf("C%d", row), entry.Sources)
+	}
+
+	_ = f.SetColWidth("Sheet1", "A", "A", 40)
+	_ = f.SetColWidth("Sheet1", "B", "B", 60)
+	_ = f.SetColWidth("Sheet1", "C", "C", 40)
+
+	if err := f.SaveAs(outputFilePath); err != nil {
+		fmt.Printf("Error saving batch responses file: %v\n", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(SaveBatchResp{Error: fmt.Sprintf("Failed to save responses file: %v", err)})
+		return
+	}
+
+	fmt.Printf("✅ Saved batch responses to %s with %d entries.\n", outputFilePath, len(req.Entries))
+	_ = json.NewEncoder(w).Encode(SaveBatchResp{
+		Status: "success",
+		File:   outputFilePath,
+	})
 }
 
 func downloadWasmFiles() {
@@ -350,6 +552,8 @@ func main() {
 	http.HandleFunc("/api/reload", handleReloadIndex)
 	http.HandleFunc("/api/sync", handleSyncKnowledgeBase)
 	http.HandleFunc("/api/savedialog", handleSaveDialog)
+	http.HandleFunc("/api/readquestions", handleReadQuestions)
+	http.HandleFunc("/api/savequestionsresponses", handleSaveQuestionsResponses)
 
 	// Check if SSL certs exist
 	certFile := "cert.pem"

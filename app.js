@@ -357,6 +357,23 @@ function appendMessage(isUser, content, images = [], sender = "") {
     return textSpan;
 }
 
+function appendSpinnerBubble() {
+    const spinner = document.createElement('div');
+    spinner.className = 'msg-container';
+    spinner.innerHTML = `
+        <div class="msg-a">
+            <span class="expert-badge">🤖 RAG_RETRIEVER</span><br>
+            <div class="typing-indicator">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>`;
+    chatContainer.appendChild(spinner);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+    return spinner;
+}
+
 // Simple parser for styling markdown lists, bold texts, linebreaks
 function formatMarkdown(text) {
     if (!text) return "";
@@ -439,19 +456,7 @@ async function handleUserMessage() {
     }
 
     // Append loading spinner
-    const spinner = document.createElement('div');
-    spinner.className = 'msg-container';
-    spinner.innerHTML = `
-        <div class="msg-a">
-            <span class="expert-badge">🤖 RAG_RETRIEVER</span><br>
-            <div class="typing-indicator">
-                <span></span>
-                <span></span>
-                <span></span>
-            </div>
-        </div>`;
-    chatContainer.appendChild(spinner);
-    chatContainer.scrollTop = chatContainer.scrollHeight;
+    const spinner = appendSpinnerBubble();
 
     // Save query context to resolve embedding response later
     window.currentQueryText = text;
@@ -782,21 +787,30 @@ function initInferenceWorker() {
                 chatContainer.scrollTop = chatContainer.scrollHeight;
             }
             if (complete) {
-                // Done generating
+                // Done generating tokens
                 const fullText = cleanedText.trim();
                 const questionText = window.currentQueryText;
                 const footnoteText = getSourcesFootnoteText(window.currentTopChunks);
-                const answerText = footnoteText ? `${fullText}\n\nSources:\n${footnoteText}` : fullText;
                 
-                // Avoid duplicate entries if both the callback and promise resolution trigger 'complete'
+                // Avoid duplicate entries
                 const lastHistory = chatMessageHistory[chatMessageHistory.length - 1];
-                if (!lastHistory || lastHistory.q !== questionText || lastHistory.a !== answerText) {
-                    chatMessageHistory.push({ q: questionText, a: answerText });
+                if (!lastHistory || lastHistory.q !== questionText || lastHistory.a !== fullText) {
+                    chatMessageHistory.push({ q: questionText, a: fullText, sources: footnoteText });
                     speakText(fullText);
                 }
             }
         } else if (status === 'done') {
-            // Finished streaming. No action needed as 'token' complete flag handles memory storage
+            // LiteRT worker generation promise has fully resolved and engine is idle
+            if (window.currentBatchResolver) {
+                const resolve = window.currentBatchResolver;
+                window.currentBatchResolver = null;
+                const lastHistory = chatMessageHistory[chatMessageHistory.length - 1] || {};
+                resolve({ 
+                    q: lastHistory.q || window.currentQueryText || "", 
+                    a: lastHistory.a || "", 
+                    sources: lastHistory.sources || "" 
+                });
+            }
         } else if (status === 'error') {
             progressContainer.style.display = 'none';
             modelStatusText.innerHTML = "● Loader Error";
@@ -804,6 +818,12 @@ function initInferenceWorker() {
             modelStatusDetail.innerHTML = error;
             if (window.currentSpinnerEl) window.currentSpinnerEl.remove();
             
+            if (window.currentBatchResolver) {
+                const resolve = window.currentBatchResolver;
+                window.currentBatchResolver = null;
+                resolve({ q: window.currentQueryText || "", a: `Error: ${error}`, sources: "" });
+            }
+
             const isWebGPUError = error.includes("navigator.gpu") || error.includes("WebGPU") || error.includes("adapter");
             if (isWebGPUError) {
                 appendMessage(false, `❌ **Error**: ${error}
@@ -940,6 +960,113 @@ btnSaveDialog.addEventListener('click', async () => {
         btnSaveDialog.innerHTML = "💾 Save Dialog";
     }
 });
+
+const btnBatchQuestions = document.getElementById('btn-batch-questions');
+
+function answerQuestionPromise(qText) {
+    return new Promise((resolve, reject) => {
+        if (!kbData || !kbData.chunks || kbData.chunks.length === 0) {
+            reject(new Error("Knowledge Base is empty or not synchronized. Please load PDF files and click 'Sync Knowledge Base'."));
+            return;
+        }
+        if (!worker) {
+            reject(new Error("LiteRT model is not loaded yet. Please wait for model initialization."));
+            return;
+        }
+
+        window.currentBatchResolver = resolve;
+        window.currentQueryText = qText;
+        
+        // Show question in chat UI
+        appendMessage(true, qText);
+        
+        window.currentSpinnerEl = appendSpinnerBubble();
+        
+        worker.postMessage({
+            command: 'embed',
+            data: { text: qText }
+        });
+    });
+}
+
+if (btnBatchQuestions) {
+    btnBatchQuestions.addEventListener('click', async () => {
+        const filename = prompt("Enter Excel questions file name/path (e.g. MyQuestions.xlsx in ./Dialogs):", "MyQuestions.xlsx");
+        if (!filename || !filename.trim()) return;
+
+        btnBatchQuestions.disabled = true;
+        btnBatchQuestions.innerHTML = "⏳ Reading File...";
+
+        try {
+            const readRes = await fetch('/api/readquestions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: filename.trim() })
+            });
+
+            const readData = await readRes.json();
+            if (!readRes.ok || readData.error) {
+                throw new Error(readData.error || "Failed to read questions file");
+            }
+
+            const questions = readData.questions;
+            const resolvedPath = readData.filepath;
+
+            appendMessage(false, `📑 **Batch Processing Started**: Loaded **${questions.length}** question(s) from \`${resolvedPath}\`. Starting sequential Q&A...`, [], "SYSTEM");
+
+            const batchResults = [];
+
+            for (let i = 0; i < questions.length; i++) {
+                const qText = questions[i];
+                
+                // Alert user which question is being answered
+                appendMessage(false, `⏳ **[Question ${i + 1}/${questions.length}]** Answering: *"${qText}"*`, [], "SYSTEM");
+
+                try {
+                    const result = await answerQuestionPromise(qText);
+                    batchResults.push(result);
+                } catch (err) {
+                    console.error(`Error answering question ${i + 1}:`, err);
+                    batchResults.push({
+                        q: qText,
+                        a: `Error generating response: ${err.message}`,
+                        sources: ""
+                    });
+                }
+
+                // Brief cooldown delay to allow LiteRT WebGPU worker state cleanup between queries
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
+
+            appendMessage(false, `✅ **Batch Processing Completed**: All **${questions.length}** questions have been processed! Writing response file...`, [], "SYSTEM");
+
+            const saveRes = await fetch('/api/savequestionsresponses', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    original_file: resolvedPath,
+                    entries: batchResults
+                })
+            });
+
+            const saveData = await saveRes.json();
+            if (!saveRes.ok || saveData.error) {
+                throw new Error(saveData.error || "Failed to save response file");
+            }
+
+            appendMessage(false, `🎉 **Success**: Batch response file saved to \`${saveData.file}\`.`, [], "SYSTEM");
+            alert(`Batch Q&A completed!\nAll questions answered and saved to:\n${saveData.file}`);
+
+        } catch (e) {
+            console.error("Batch questions error:", e);
+            appendMessage(false, `❌ **Batch Processing Failed**: ${e.message}`, [], "SYSTEM");
+            alert(`Batch processing error: ${e.message}`);
+        } finally {
+            btnBatchQuestions.disabled = false;
+            btnBatchQuestions.innerHTML = "📑 Batch Questions Processing";
+        }
+    });
+}
 
 btnStopServer.addEventListener('click', async () => {
     if (confirm("Are you sure you want to stop the local Go server?")) {
