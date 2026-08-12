@@ -6,7 +6,7 @@ This guide provides step-by-step instructions to set up, configure, and run **Pd
 
 ## 1. System Requirements & Dependencies
 
-Before starting, ensure your Mac has the following installed:
+Before starting, ensure the target Mac has the following installed:
 
 * **Go Toolchain** (Go 1.20+ recommended)
 * **Python 3.9+**
@@ -141,3 +141,6 @@ PdfLrt_Package/
 └── PdfDir/
     └── knowledge_base.json        <-- Compiled document database
 ```
+
+END of DOC
+---

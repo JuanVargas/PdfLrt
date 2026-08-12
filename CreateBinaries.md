@@ -1,6 +1,6 @@
 # Cross-Compiling and Deploying PdfLrt Binaries
 
-This guide provides instructions to compile the **PdfLrt** code on one system (e.g., Linux or macOS) and deploy the executable binary on another target system (e.g., Windows) without needing to install the Go toolchain on the target system.
+This guide provides instructions to compile the **PdfLrt** code on one system (e.g., Linux or macOS) and deploy the executable binary on a different target system (e.g., Windows) without needing to install the Go toolchain on the target system.
 
 ---
 
@@ -14,13 +14,13 @@ Go features native cross-compilation support. The compiler can generate executab
 
 ### CGO and Statically Linked Binaries
 
-Because **PdfLrt** is written in pure Go and uses a hird-party dependency, `excelize`, also in pure Go, there is no need to use the **CGO** which is disabled (`CGO_ENABLED=0`) during cross-compilation. This means the compiler produces a statically linked, self-contained binary that has no external library dependencies on the target OS, ensuring it will run immediately without further compilation or software installation.
+Because **PdfLrt** orchestrator is written in pure Go and uses a hird-party dependency, `excelize`, also in pure Go, there is no need to use the **CGO** which is disabled (`CGO_ENABLED=0`) during cross-compilation. This means that the compiler produces a statically linked, self-contained binary that has no external library dependencies on the target OS, ensuring it will run immediately without further compilation or software installation.
 
 ---
 
 ## 2. Cross-Compilation Commands Matrix
 
-Run the compilation commands from the project root folder, e.g., `/home/juan/code/PdfLrt`.
+Run the compilation commands from the PdfLrt root folder, e.g., `... /coder/go/PdfLrt`.
 
 ### A. Compiling FROM Linux or macOS
 
@@ -72,7 +72,8 @@ set GOARCH=
 
 ## 3. Deployment and Running on the Target System
 
-The Go binary contains the web server logic but requires the static frontend assets and the knowledge_base document to run. Follow these steps to package and execute the application:
+The Go binary contains the orchestrator and the web server logic. It requires the static frontend assets and the knowledge_base document to run.
+Follow these steps to package and execute the application:
 
 ### Step 1: Package the Deployment Folder
 Zip or copy the following files/folders from the build machine and transfer them to the target machine:
@@ -131,6 +132,9 @@ Zip or copy the following files/folders from the build machine and transfer them
 ### Step 3: Accessing the Application
 Once the server prints `Main HTTP Server starting on http://localhost:8085`, open a web browser:
 
-* **Local access**: Navigate to `http://localhost:8085`.
+* **Local access**: Navigate to `http://localhost:8085` or `http://localhost:8080` .
 
-* **Network access (e.g. tablet/iPad)**: Navigate to `http://<host-ip-address>:8085`. (Ensure the host system's firewall allows incoming connections on port `8085`).
+* **Network access (e.g. tablet/iPad)**: Navigate to `http://<host-ip-address>:8085 or 8080`. (Ensure the host system's firewall allows incoming connections on port `8085`).
+
+END of Doc
+---

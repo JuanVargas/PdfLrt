@@ -1,12 +1,13 @@
 # Build Knowledge Base via Docker for PdfLrt
 
-This setup builds a local Docker container to execute the ingestion and embedding generation script, avoiding the need to install Python dependencies on the host machine.
+This file describes the setup that builds a local Docker container to execute the ingestion and embedding generation script, 
+avoiding the need to install Python dependencies on the host machine.
 
 ## Prerequisites
 
 1. Docker must be running on the system.
 
-2. A folder named PdfDir must be already present under ../PdfLrt/ with the PDF files that wikll be ingested
+2. A folder named PdfDir must be already present under ../PdfLrt/ with the PDF files that will be ingested
 
 ## Setup & Running
 
@@ -42,3 +43,6 @@ From the terminal console execute these commands:
 2. Runs the container mounting the current directory to `/app` (so it can read `/PdfDir` and write `knowledge_base.json`).
 
 3. **Model Caching (Important):** Mounts the host's Hugging Face cache folder (`~/.cache/huggingface` on macOS/Linux or `%USERPROFILE%\.cache\huggingface` on Windows) to the container's `/root/.cache/huggingface`. This ensures that the embedding model (`nomic-ai/nomic-embed-text-v1.5`) is cached on your host machine and won't need to be re-downloaded (approx. 500MB) on subsequent runs.
+
+END of DOC
+---

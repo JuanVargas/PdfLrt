@@ -6,27 +6,34 @@ This document contains step-by-step instructions to package, migrate, and run **
 
 ## 1. Automated Packaging (Recommended)
 
-To simplify offline deployment, a packaging script [create_offline_package.sh](file:///home/juan/code/go/PdfLrt/create_offline_package.sh) is provided. It compiles the Go backend server for Windows, macOS, and Linux, gathers all static web files, wasm dependencies, models, and outputs a self-contained ZIP archive.
+To simplify offline deployment, a packaging script [create_offline_package.sh](file:///home/juan/code/go/PdfLrt/create_offline_package.sh) is provided. It compiles the Go backend server for Windows, macOS, and/or Linux, gathers all static web files, wasm dependencies, models, and outputs a self-contained ZIP archive.
 
 ### Step 1: Run the Packaging Tool (on Ubuntu/Build Host)
-From your terminal, run:
+From the console terminal, run:
 ```bash
 ./create_offline_package.sh
 ```
 
 ### Step 2: Transfer and Extract
-Copy the generated `pdflrt_offline_release.zip` file to your target offline host (Windows or macOS) via USB drive or internal file share and extract it. It contains everything needed to run:
+
+Copy the generated `pdflrt_offline_release.zip` file to the target offline host (Windows or macOS) via USB drive or internal file share and extract it.
+It contains everything needed to run:
+
 * The pre-compiled Go server binary (`pdflrt.exe`, `pdflrt_mac_silicon`, etc.)
+
 * All static frontend assets (`index.html`, `app.js`, etc.)
+
 * Pre-downloaded MediaPipe WASM runtimes (`wasm/`)
+
 * Local embedding and LLM model files (`models/`)
+
 * Pre-compiled document knowledge base (`PdfDir/knowledge_base.json`), if generated.
 
 ---
 
 ## 2. Manual Packaging (Alternative)
 
-If you prefer to zip the directory manually, compile the binary and ensure you include the following folders:
+If possible, an alternative is to zip the directory manually, compile the binary and ensure the folders listed beow are included :
 
 * **Go Executable**: Cross-compile the Go server from the build host:
   * For Windows: `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o pdflrt.exe pdflrt.go`
@@ -45,16 +52,20 @@ If you prefer to zip the directory manually, compile the binary and ensure you i
 ## 3. Setting Up and Running on the Target Host
 
 1. Copy the zipped folder to the target machine and extract it.
+
 2. Open a Command Prompt (Windows) or Terminal (macOS) in the extracted folder.
+
 3. Start the Go web server:
    - **Windows**: Double-click `pdflrt.exe` or run `.\pdflrt.exe`
    - **macOS**: Run `./pdflrt_mac_silicon` (or `pdflrt_mac_intel`)
+
 4. Open a web browser (Google Chrome recommended) and navigate to:
    ```text
    https://localhost:8443
    ```
    > [!IMPORTANT]
    > **HTTPS is strictly required** by browsers to establish a "Secure Context". Without a Secure Context, the browser will disable access to the GPU (`WebGPU`) and multi-threaded WebAssembly (`SharedArrayBuffer`), causing model loading to fail.
+
 5. **Bypass the self-signed certificate warning**: Since the server generates a local SSL certificate on startup, the browser will display a warning. Click **Advanced** and choose **Proceed to localhost (unsafe)** to load the application.
 
 ---
@@ -71,23 +82,32 @@ Ensure both the target server and the iPad are connected to the same Wi-Fi route
 * On macOS: Open System Settings -> Wi-Fi -> Details, or run `ifconfig` in Terminal.
 
 ### Step 3: Configure Server Firewall (Windows only)
+
 Allow port `8443` through Windows Defender Firewall:
+
 1. Search for **Windows Defender Firewall with Advanced Security**.
+
 2. Select **Inbound Rules** -> **New Rule...**
+
 3. Choose **Port** -> **TCP** -> Specify local port: `8443`.
+
 4. Choose **Allow the connection** and apply to Private networks.
 
 ### Step 4: Open Safari on iPad
+
 1. Open **Safari** on the iPad.
+
 2. Enter the HTTPS address: `https://<server_ip>:8443` (e.g., `https://192.168.1.15:8443`).
+
 3. Tap **Show Details** -> **Visit this website** to bypass the SSL warning.
+
 4. **Install as a PWA**: Tap the **Share** button -> **Add to Home Screen** -> **Add**. The app will now run in standalone, fullscreen mode with WebGPU and offline support.
 
 ---
 
 ## 5. Advanced: Ingesting PDFs Offline via Docker Image Transfer
 
-If you need to process new PDF manuals on target hosts but cannot install Python/pip dependencies due to network restrictions, you can transfer the Docker ingestion image offline.
+If there is a need to process new PDF manuals on target hosts but cannot install Python/pip dependencies due to network restrictions, you can transfer the Docker ingestion image offline.
 
 ### Step 1: Build and Save the Image on the Build Host (with internet)
 1. Build the Docker image:
@@ -120,3 +140,6 @@ To build the image locally in this environment:
 1. Export your corporate SSL decrypting proxy root certificate in Base64 PEM format.
 2. Save it in the project root folder as `proxy-ca.crt` (the `.crt` extension is required).
 3. Re-run the Docker build. The [Dockerfile](file:///home/juan/code/go/PdfLrt/Dockerfile) will automatically detect the `proxy-ca.crt` file, trust it, and pip will use the trusted host flags to complete the installation safely.
+
+END of DOC
+---

@@ -1,8 +1,7 @@
 # GitHub Deployment Architecture & Model Distribution
 
-This document details how **PdfLrt** is deployed and how the 1.4 GB local embedding model is distributed via `github.com` without overloading the Git repository history or requiring access to Hugging Face (`huggingface.co`) on target machines.
-
-
+This document details how **PdfLrt** is deployed and how the local embedding model is distributed via `github.com` without overloading
+the Git repository history or requiring access to Hugging Face (`huggingface.co`) on target machines.
 
 ---
 
@@ -84,7 +83,6 @@ After pulling the code and running `download_model_from_github.py` and `build_kn
 
 ## Useful Github commands
 
-
 * To create a new repo from the VSC terminal and upload to GitHub
 
 ```bash 
@@ -98,7 +96,6 @@ Go to Github.com in the browser, create a new repo, copy into the local host the
 
   git remote add origin https://www.github.com/MyName/MyRepo
   
-
   git push -u origin main          # Uploads the local code into the Github repo main branch and 
                                    # will remember the connection for future purposes 
 ```
@@ -120,7 +117,7 @@ git add .       # stage all modifications done locally to the local repo
 
 git add filename.ext  # add just filename.ext to the repo
 
-git commit -m "describe chentges to repo" # wrap the staged changes into a commit; describe modifications
+git commit -m "describe changes to repo" # wrap the staged changes into a commit; describe modifications
 
 git push origin main  # push modificatins to repo
 
@@ -142,14 +139,13 @@ git push origin main
 
 ```
 
-
 ### Source Control in VSC
 
 I prefer using the terminal from VSC than using VSC's source control. But just in case, here is the URL to instructions for the VSC source control from the IDE:
-
 
 ```bash
   https://code.visualstudio.com/docs/sourcecontrol/quickstart
 ```
 
-
+END of DOC
+---

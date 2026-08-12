@@ -20,7 +20,7 @@ The web server is written in Go; the document ingestion pipeline is written in P
   - `strings` (Query processing)
 
 * **External Go Packages**:
-  - `github.com/xuri/excelize/v2` (Microsoft Excel file generation API, used for saving conversation logs)
+  - `github.com/xuri/excelize/v2` (MSFT Excel file generation API, used for saving conversation logs)
 
 ### Python Ingestion Pipeline (All OSs)
 
@@ -39,7 +39,7 @@ The web server is written in Go; the document ingestion pipeline is written in P
 ### A. Linux (Ubuntu, Debian, Fedora, RHEL, etc.)
 
 * **Dynamic Linker / C Standard Library**: `glibc` (GNU C Library) `2.31` or higher is required by the compiled Go binary.
-* **Network Stack**: BSD Socket API for TCP/IP communication (port `8085` for HTTP).
+* **Network Stack**: BSD Socket API for TCP/IP communication (port `8085` or `8080` for HTTP).
 * **Web Browser**: Chrome, Firefox, or Edge supporting WebGPU and WebAssembly SIMD.
 * **GPU Acceleration (Optional, for browser GPU execution)**:
   - **NVIDIA GPU**: NVIDIA proprietary drivers (v450+) and Vulkan/WebGL2/WebGPU backend support.
@@ -55,8 +55,8 @@ The web server is written in Go; the document ingestion pipeline is written in P
 
 ### C. Windows (Windows 10 / 11)
 
-* **Command Shell**: PowerShell 5.1+ or Cmd for execution scripts (`run_ingest.ps1` or `run_ingest.bat`).
-* **C-Runtime**: Microsoft Visual C++ Redistributable (often required for native binary components in Go or Python packages).
+* **Command Shell**: PowerShell 5.1+ or Cmd for executing the PDF ingestion scripts (`run_ingest.ps1` or `run_ingest.bat`).
+* **C-Runtime**: MSFT Visual C++ Redistributable (often required for native binary components in Go or Python packages).
 * **GPU Acceleration (Optional, for browser GPU execution)**:
   - **NVIDIA GPU**: NVIDIA proprietary drivers and DirectX12/Vulkan backends supporting WebGPU in browsers.
   - *Fallback*: CPU execution optimized via XNNPack under WebAssembly.
@@ -107,3 +107,5 @@ Refer to the detailed runtime comparison in LiteRT vs WebLLM.md
 
 Because the entire pipeline is self-contained within PyTorch/Python (for ingestion) and WebGPU/WASM (for browser runtime), there is **zero** dependency on Ollama.
 
+END of DOC
+---

@@ -91,14 +91,15 @@ flowchart TD
 
 ## 2. Description of System Elements
 
-### A. Host Ingestion Pipeline (`build_knowledge_base.py`)
-This python-based component acts as the compiler for the RAG database.
+### A. Host Ingestion Pipeline 
+
+There is a shell script named `run_ingest.sh` or `run_ingest.bat` that creates a uv virtual env within Docker and launches a python script named `build-knowledge_base.py` that does the following: 
 * **Role**:
   - Scans `PdfDir/` for PDF documents.
   - Extracts text, page numbers, and layouts using the **PyMuPDF (`fitz`)** library.
   - Detects figures and extracts them as JPEG images (encoded in base64 data URIs).
   - Segments the text into overlapping semantic chunks.
-  - Connects to the local **Ollama** embedding endpoint to generate high-dimensional vectors for each chunk using `nomic-embed-text:latest`.
+  - (DEMOTED) Connect to the local **Ollama** embedding endpoint to generate high-dimensional vectors for each chunk using `nomic-embed-text:latest`.
   - Serializes all parsed text, page references, figure metadata, and vector embeddings into a single static file: `PdfDir/knowledge_base.json`.
 
 ### B. Go Backend Web Server (`pdflrt.go`)
@@ -112,7 +113,7 @@ This is the coordinator on the host machine.
 ### C. PWA Frontend (`index.html` & `app.js`)
 The user-facing PWA interface.
 * **Role**:
-  - Offers a modern, responsive, and responsive chat interface.
+  - Offers a modern, responsive chat interface.
   - Handles client-side state, user configuration parameters, and speech APIs (Web Speech API).
   - Implements **Sync Knowledge Base**: Downloads the compiled `knowledge_base.json` database from the Go server and stores it in the client browser's local **IndexedDB** database (`PdfLrtOfflineDB`).
   - Manages client-side RAG workflow, routing queries to the background Web Worker and rendering the streamed token responses.
@@ -122,10 +123,10 @@ The offline enabler for PWA capabilities.
 * **Role**:
   - Runs in a background browser context.
   - Caches all static codebase dependencies (`index.html`, `app.js`, icons, `transformers.min.js`, etc.) into Cache Storage.
-  - Intercepts browser network requests. If the host server is offline or the client is disconnected, it serves the cached assets directly, allowing the application to load instantly without a network connection.
+  - Intercepts browser network requests. If the host server is offline or the client is disconnected, it serves the cached assets directly, allowing the application to load quickly even without a network connection.
 
 ### E. Web Worker (`worker.js`)
-A background execution thread in the browser dedicated to heavy mathematical and machine learning calculations.
+A background execution thread in the browser dedicated to the heavy mathematical and machine learning calculations.
 * **Role**:
   - Prevents freezing the UI thread during local inference calculations.
   - Loads **ONNX Runtime Web** (via `transformers.min.js`) to run `nomic-embed-text-v1.5` locally, generating 768-dimensional query vector embeddings.
@@ -136,3 +137,6 @@ A background execution thread in the browser dedicated to heavy mathematical and
     2. Performs Cosine Similarity search locally against IndexedDB chunks.
     3. Retrieves top matched chunks and merges them as context.
     4. Submits the prompt to LiteRT `LlmInference` and streams tokenized output back to the UI.
+
+END OF DOC
+---
