@@ -4,10 +4,9 @@ import json
 import base64
 import re
 import sys
+import argparse
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PDF_DIR = os.path.join(BASE_DIR, "PdfDir")
-OUTPUT_FILE = os.path.join(PDF_DIR, "knowledge_base.json")
 
 # Import sentence-transformers for local, offline embeddings
 try:
@@ -16,16 +15,32 @@ except ImportError:
     print("Error: sentence-transformers is not installed. Please run: pip install sentence-transformers")
     sys.exit(1)
 
-def process_pdfs():
+def process_pdfs(pdf_dir_arg=None, output_dir_arg=None):
+    pdf_dir = os.path.abspath(pdf_dir_arg) if pdf_dir_arg else os.path.join(BASE_DIR, "PdfDir")
+    
+    if output_dir_arg:
+        target_parent = os.path.abspath(output_dir_arg)
+    else:
+        target_parent = pdf_dir
+        
+    kb_dir = os.path.join(target_parent, "kb")
+    os.makedirs(kb_dir, exist_ok=True)
+    
+    output_file = os.path.join(kb_dir, "knowledge_base.json")
+    figures_dir = os.path.join(kb_dir, "figures")
+    
+    print(f"📖 PDF Input Directory: {pdf_dir}")
+    print(f"💾 Knowledge Base Output Directory: {kb_dir}")
+
     kb = {
         "chunks": [],
         "figures": []
     }
 
-    if not os.path.exists(PDF_DIR):
-        print(f"Directory {PDF_DIR} not found. Creating it...")
-        os.makedirs(PDF_DIR, exist_ok=True)
-        print("Please place PDF manuals in PdfDir and run this script again.")
+    if not os.path.exists(pdf_dir):
+        print(f"Directory {pdf_dir} not found. Creating it...")
+        os.makedirs(pdf_dir, exist_ok=True)
+        print("Please place PDF manuals in the PDF directory and run this script again.")
         return
 
     # Check if we can load/download the embedding model
@@ -54,17 +69,17 @@ def process_pdfs():
             print(f"Failed to load embedding model: {e}")
             sys.exit(1)
 
-    pdf_files = [f for f in os.listdir(PDF_DIR) if f.lower().endswith(".pdf")]
+    pdf_files = [f for f in os.listdir(pdf_dir) if f.lower().endswith(".pdf")]
     if not pdf_files:
-        print(f"No PDF files found in {PDF_DIR}.")
+        print(f"No PDF files found in {pdf_dir}.")
         # Create an empty knowledge base file so the server can start/be sync'd
-        with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             json.dump(kb, f)
-        print(f"Created empty knowledge base at {OUTPUT_FILE}")
+        print(f"Created empty knowledge base at {output_file}")
         return
 
     for filename in pdf_files:
-        filepath = os.path.join(PDF_DIR, filename)
+        filepath = os.path.join(pdf_dir, filename)
         print(f"Processing {filename}...")
         seen_figures = set()
         
@@ -113,8 +128,7 @@ def process_pdfs():
                         
                         # Save the page as a JPEG file
                         try:
-                            # Create a subfolder for figures
-                            figures_dir = os.path.join(PDF_DIR, "figures")
+                            # Ensure figures subdirectory in target kb folder exists
                             os.makedirs(figures_dir, exist_ok=True)
                             
                             pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
@@ -126,8 +140,8 @@ def process_pdfs():
                             
                             pix.save(image_path)
                             
-                            # Use browser-resolvable relative URL
-                            relative_img_uri = f"/PdfDir/figures/{image_filename}"
+                            # Relative path inside knowledge base folder
+                            relative_img_uri = f"figures/{image_filename}"
                             
                             kb["figures"].append({
                                 "source": filename,
@@ -204,20 +218,15 @@ def process_pdfs():
         doc.close()
 
     # Save to file
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+    with open(output_file, "w", encoding="utf-8") as f:
         json.dump(kb, f)
     
-    print(f"\nKnowledge base saved to {OUTPUT_FILE}")
+    print(f"\nKnowledge base saved to {output_file}")
     print(f"Extracted {len(kb['chunks'])} text chunks (with embeddings) and {len(kb['figures'])} visual assets.")
 
-    # Also make a symbolic link or backup as knowledge_base.json for compatibility/robustness
-    alt_output = os.path.join(PDF_DIR, "knowledge_base.json")
-    try:
-        with open(alt_output, "w", encoding="utf-8") as f:
-            json.dump(kb, f)
-        print(f"Compatibility knowledge base copy saved to {alt_output}")
-    except Exception as e:
-        pass
-
 if __name__ == "__main__":
-    process_pdfs()
+    parser = argparse.ArgumentParser(description="Build Knowledge Base from PDFs for PdfLrt")
+    parser.add_argument("--pdf-dir", "-p", type=str, default=None, help="Directory containing PDF files")
+    parser.add_argument("--output-dir", "-o", type=str, default=None, help="Output folder where 'kb' subfolder will be created")
+    args = parser.parse_args()
+    process_pdfs(pdf_dir_arg=args.pdf_dir, output_dir_arg=args.output_dir)

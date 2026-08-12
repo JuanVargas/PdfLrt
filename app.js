@@ -1,4 +1,4 @@
-// app.js - PdfLrt Frontend Controller
+// app.js - PdfPadLrt Frontend Controller
 
 let worker = null;
 let kbData = null;
@@ -30,6 +30,10 @@ const progressContainer = document.getElementById('progress-container');
 const progressBar = document.getElementById('progress-bar');
 const pdfItemsContainer = document.getElementById('pdf-items-container');
 const historyContainer = document.getElementById('history-container');
+const pdfPathInput = document.getElementById('pdf-path-input');
+const kbOutputPathInput = document.getElementById('kb-output-path-input');
+const kbLoadPathInput = document.getElementById('kb-load-path-input');
+const pdfListTitle = document.getElementById('pdf-list-title');
 
 // Modal Elements
 const imageModal = document.getElementById('image-modal');
@@ -39,55 +43,6 @@ const imageModalClose = document.getElementById('image-modal-close');
 // Close image modal on click
 imageModalClose.onclick = () => { imageModal.style.display = 'none'; };
 imageModal.onclick = (e) => { if(e.target === imageModal) imageModal.style.display = 'none'; };
-
-// Troubleshoot WebGPU Modal Elements
-const btnWebgpuTrouble = document.getElementById('btn-webgpu-trouble');
-const webgpuTroubleModal = document.getElementById('webgpu-trouble-modal');
-const btnCloseTrouble = document.getElementById('btn-close-trouble');
-const btnCloseTroubleFooter = document.getElementById('btn-close-trouble-footer');
-
-if (btnWebgpuTrouble) {
-    btnWebgpuTrouble.onclick = () => {
-        if (webgpuTroubleModal) {
-            webgpuTroubleModal.style.display = 'flex';
-            if (window.switchTroubleTab) window.switchTroubleTab('linux');
-        }
-    };
-}
-if (btnCloseTrouble) btnCloseTrouble.onclick = () => { webgpuTroubleModal.style.display = 'none'; };
-if (btnCloseTroubleFooter) btnCloseTroubleFooter.onclick = () => { webgpuTroubleModal.style.display = 'none'; };
-if (webgpuTroubleModal) {
-    webgpuTroubleModal.onclick = (e) => {
-        if (e.target === webgpuTroubleModal) webgpuTroubleModal.style.display = 'none';
-    };
-}
-
-const btnForceReset = document.getElementById('btn-force-reset');
-if (btnForceReset) {
-    btnForceReset.onclick = async () => {
-        if (confirm("This will clear the browser's PWA offline cache and unregister the service worker to force a clean reload. Proceed?")) {
-            try {
-                if ('serviceWorker' in navigator) {
-                    const regs = await navigator.serviceWorker.getRegistrations();
-                    for (let reg of regs) {
-                        await reg.unregister();
-                    }
-                }
-                if ('caches' in window) {
-                    const keys = await caches.keys();
-                    for (let key of keys) {
-                        await caches.delete(key);
-                    }
-                }
-                alert("Cache cleared successfully! Reloading page...");
-                window.location.reload();
-            } catch (err) {
-                console.error("Failed to clear cache:", err);
-                alert("Error clearing cache: " + err.message);
-            }
-        }
-    };
-}
 
 // ---------- Audio STT / TTS Capabilities ----------
 
@@ -160,8 +115,12 @@ function cosineSimilarity(a, b) {
 // ---------- Host API integrations ----------
 
 async function fetchPDFList() {
+    const pdfDir = pdfPathInput ? pdfPathInput.value.trim() : 'PdfDir';
+    if (pdfListTitle) {
+        pdfListTitle.textContent = `PDF Source Files (${pdfDir})`;
+    }
     try {
-        const res = await fetch('/api/pdfs');
+        const res = await fetch(`/api/pdfs?dir=${encodeURIComponent(pdfDir)}`);
         if (!res.ok) throw new Error("Failed to load PDF files list");
         const pdfs = await res.json();
         
@@ -183,52 +142,64 @@ async function fetchPDFList() {
 }
 
 async function loadKnowledgeBaseJSON() {
-    dbStatusText.innerHTML = "Loading...";
-    dbStatusText.style.color = "var(--warning)";
+    if (dbStatusText) {
+        dbStatusText.innerHTML = "Loading...";
+        dbStatusText.style.color = "var(--warning)";
+    }
     
+    let targetKbPath = kbLoadPathInput ? kbLoadPathInput.value.trim() : "";
+    if (!targetKbPath) {
+        targetKbPath = pdfPathInput ? pdfPathInput.value.trim() : "PdfDir";
+    }
+
     try {
-        // Fetch the knowledge_base.json
-        const res = await fetch('/PdfDir/knowledge_base.json');
+        const res = await fetch(`/api/kb/data?path=${encodeURIComponent(targetKbPath)}`);
 
         if (!res.ok) {
-            dbStatusText.innerHTML = "Not Synchronized";
-            dbStatusText.style.color = "var(--danger)";
-            loadedChunksText.innerHTML = "Chunks Loaded: 0";
-            loadedFiguresText.innerHTML = "Figures Extracted: 0";
+            if (dbStatusText) {
+                dbStatusText.innerHTML = "Not Synchronized";
+                dbStatusText.style.color = "var(--danger)";
+            }
+            if (loadedChunksText) loadedChunksText.innerHTML = "Chunks Loaded: 0";
+            if (loadedFiguresText) loadedFiguresText.innerHTML = "Figures Extracted: 0";
             return;
         }
 
         kbData = await res.json();
         
-        // Normalize loaded kbData to support older flat-array format compatibility
-        if (Array.isArray(kbData)) {
-            kbData = {
-                chunks: kbData,
-                figures: []
-            };
-        } else if (!kbData || typeof kbData !== 'object') {
-            kbData = {
-                chunks: [],
-                figures: []
-            };
-        } else {
-            if (!kbData.chunks) kbData.chunks = [];
-            if (!kbData.figures) kbData.figures = [];
+        // Resolve figure image URLs to use /api/kb/file?path=...
+        if (kbData.figures && Array.isArray(kbData.figures)) {
+            let baseKbDir = targetKbPath;
+            if (!baseKbDir.endsWith('/kb') && !baseKbDir.endsWith('/kb/')) {
+                baseKbDir = baseKbDir.replace(/\/+$/, '') + '/kb';
+            }
+            kbData.figures.forEach(fig => {
+                if (fig.image && !fig.image.startsWith('data:') && !fig.image.startsWith('http')) {
+                    let cleanImg = fig.image.replace(/^\//, '');
+                    if (cleanImg.startsWith('PdfDir/')) cleanImg = cleanImg.replace(/^PdfDir\//, '');
+                    let fullImgPath = baseKbDir + '/' + cleanImg;
+                    fig.image = `/api/kb/file?path=${encodeURIComponent(fullImgPath)}`;
+                }
+            });
+        }
+
+        const chunksCount = kbData.chunks ? kbData.chunks.length : 0;
+        const figuresCount = kbData.figures ? kbData.figures.length : 0;
+        
+        if (loadedChunksText) loadedChunksText.innerHTML = `Chunks Loaded: ${chunksCount}`;
+        if (loadedFiguresText) loadedFiguresText.innerHTML = `Figures Extracted: ${figuresCount}`;
+        if (dbStatusText) {
+            dbStatusText.innerHTML = "Synchronized";
+            dbStatusText.style.color = "var(--success)";
         }
         
-        const chunksCount = kbData.chunks.length;
-        const figuresCount = kbData.figures.length;
-        
-        loadedChunksText.innerHTML = `Chunks Loaded: ${chunksCount}`;
-        loadedFiguresText.innerHTML = `Figures Extracted: ${figuresCount}`;
-        dbStatusText.innerHTML = "Synchronized";
-        dbStatusText.style.color = "var(--success)";
-        
-        appendMessage(false, `📂 **System**: Knowledge Base updated with ${chunksCount} text segments and ${figuresCount} visual figures.`, [], "SYSTEM");
+        appendMessage(false, `📂 **System**: Knowledge Base loaded from \`${targetKbPath}\` (${chunksCount} text segments, ${figuresCount} visual figures).`, [], "SYSTEM");
     } catch (e) {
         console.error("Error loading knowledge base JSON:", e);
-        dbStatusText.innerHTML = "Empty/Not Synchronized";
-        dbStatusText.style.color = "var(--danger)";
+        if (dbStatusText) {
+            dbStatusText.innerHTML = "Empty/Not Synchronized";
+            dbStatusText.style.color = "var(--danger)";
+        }
     }
 }
 
@@ -357,23 +328,6 @@ function appendMessage(isUser, content, images = [], sender = "") {
     return textSpan;
 }
 
-function appendSpinnerBubble() {
-    const spinner = document.createElement('div');
-    spinner.className = 'msg-container';
-    spinner.innerHTML = `
-        <div class="msg-a">
-            <span class="expert-badge">🤖 RAG_RETRIEVER</span><br>
-            <div class="typing-indicator">
-                <span></span>
-                <span></span>
-                <span></span>
-            </div>
-        </div>`;
-    chatContainer.appendChild(spinner);
-    chatContainer.scrollTop = chatContainer.scrollHeight;
-    return spinner;
-}
-
 // Simple parser for styling markdown lists, bold texts, linebreaks
 function formatMarkdown(text) {
     if (!text) return "";
@@ -456,7 +410,19 @@ async function handleUserMessage() {
     }
 
     // Append loading spinner
-    const spinner = appendSpinnerBubble();
+    const spinner = document.createElement('div');
+    spinner.className = 'msg-container';
+    spinner.innerHTML = `
+        <div class="msg-a">
+            <span class="expert-badge">🤖 RAG_RETRIEVER</span><br>
+            <div class="typing-indicator">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>`;
+    chatContainer.appendChild(spinner);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
 
     // Save query context to resolve embedding response later
     window.currentQueryText = text;
@@ -623,22 +589,9 @@ function handleEmbedResult(queryEmbedding) {
         return { chunk, score: sim + boost };
     });
 
-    // Adjust context size based on current auto-retry level (Level 0: 4 chunks/3500 chars, Level 1: 2 chunks/1800 chars, Level 2: 1 chunk/900 chars)
-    const retryLevel = window.currentRetryLevel || 0;
-    let maxChunksCount = 4;
-    let maxCharLimit = 3500;
-    
-    if (retryLevel === 1) {
-        maxChunksCount = 2;
-        maxCharLimit = 1800;
-    } else if (retryLevel >= 2) {
-        maxChunksCount = 1;
-        maxCharLimit = 900;
-    }
-
-    // Sort descending and slice top chunks based on retry level
+    // Sort descending and slice top 4 chunks
     scoredChunks.sort((a, b) => b.score - a.score);
-    const topChunks = scoredChunks.slice(0, maxChunksCount).map(c => c.chunk);
+    const topChunks = scoredChunks.slice(0, 4).map(c => c.chunk);
     window.currentTopChunks = topChunks;
 
     // Update context snippets panel (RAG transparency)
@@ -653,26 +606,19 @@ function handleEmbedResult(queryEmbedding) {
         historyContainer.appendChild(item);
     });
 
-    // Build context prompt with length safety limit based on retry level
-    let rawContext = topChunks.map(c => c.text).join('\n\n');
-    if (rawContext.length > maxCharLimit) {
-        rawContext = rawContext.substring(0, maxCharLimit) + "\n...[Context auto-truncated for token safety]";
-    }
-    const context = rawContext;
+    // Build context prompt
+    const context = topChunks.map(c => c.text).join('\n\n');
     const modelUrl = modelPathInput.value.toLowerCase();
-    const isBatch = !!window.isBatchProcessing;
     
     let formattedPrompt = "";
     if (modelUrl.includes('llama')) {
         // Llama 3 / 3.2 Chat template
         formattedPrompt = `<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful, expert technical manual assistant. Use the following retrieved context snippets from the manuals to answer the user's question. If the answer cannot be found in the context, say "I don't know based on the provided documents." Do not invent facts. Cite the source document name and the page number for the facts you provide (e.g. "According to [document_name] (Page [page_num])...").\n\nContext:\n${context}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n`;
         
-        // Add dialogue history for interactive chat (excluded during batch questions processing)
-        if (!isBatch) {
-            const historyWindow = chatMessageHistory.slice(-2);
-            for (const h of historyWindow) {
-                formattedPrompt += `User: ${h.q}\nAssistant: ${h.a}\n`;
-            }
+        // Add dialogue history
+        const historyWindow = chatMessageHistory.slice(-2);
+        for (const h of historyWindow) {
+            formattedPrompt += `User: ${h.q}\nAssistant: ${h.a}\n`;
         }
         
         formattedPrompt += `Question: ${text}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n`;
@@ -680,11 +626,10 @@ function handleEmbedResult(queryEmbedding) {
         // Gemma 4 Instruct template with native system prompt support
         formattedPrompt = `<|turn>system\nYou are a helpful, expert technical manual assistant. Use the following retrieved context snippets from the manuals to answer the user's question. If the answer cannot be found in the context, say "I don't know based on the provided documents." Do not invent facts. Cite the source document name and the page number for the facts you provide (e.g. "According to [document_name] (Page [page_num])...").\n\nContext:\n${context}<turn|>\n`;
         
-        if (!isBatch) {
-            const historyWindow = chatMessageHistory.slice(-2);
-            for (const h of historyWindow) {
-                formattedPrompt += `<|turn>user\n${h.q}<turn|>\n<|turn>model\n${h.a}<turn|>\n`;
-            }
+        // Add dialogue history
+        const historyWindow = chatMessageHistory.slice(-2);
+        for (const h of historyWindow) {
+            formattedPrompt += `<|turn>user\n${h.q}<turn|>\n<|turn>model\n${h.a}<turn|>\n`;
         }
         
         formattedPrompt += `<|turn>user\n${text}<turn|>\n<|turn>model\n`;
@@ -700,11 +645,9 @@ ${context}
 
 History:
 `;
-        if (!isBatch) {
-            const historyWindow = chatMessageHistory.slice(-3);
-            for (const h of historyWindow) {
-                formattedPrompt += `User: ${h.q}\nAssistant: ${h.a}\n`;
-            }
+        const historyWindow = chatMessageHistory.slice(-3);
+        for (const h of historyWindow) {
+            formattedPrompt += `User: ${h.q}\nAssistant: ${h.a}\n`;
         }
         formattedPrompt += `\nQuestion: ${text}<end_of_turn>\n<start_of_turn>model\n`;
     }
@@ -725,28 +668,6 @@ History:
 function initInferenceWorker() {
     const modelUrl = modelPathInput.value.trim();
     
-    // Check for WebGPU support early
-    if (!navigator.gpu) {
-        modelStatusText.innerHTML = "● WebGPU Unsupported";
-        modelStatusText.style.color = "var(--danger)";
-        modelStatusDetail.innerHTML = "navigator.gpu is undefined.";
-        
-        appendMessage(false, `❌ **Error**: WebGPU is not supported or enabled in this browser. 
-        <br><br>
-        <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 14px; margin-top: 8px; border-left: 4px solid #fbbf24; line-height: 1.5; text-align: left;">
-            <strong style="color: #fbbf24; font-size: 14px;">WebGPU Required for LiteRT LLM:</strong><br>
-            LiteRT LLM inference runs entirely on the GPU via WebGPU. Since WebGPU is not active:
-            <ul style="margin-left: 20px; margin-top: 6px; font-size: 13px; color: #cbd5e1; display: flex; flex-direction: column; gap: 4px;">
-                <li>If you are on <strong>Linux (Nvidia)</strong>, Chrome may have disabled hardware acceleration due to driver glitches. Run with specific flags to enable it stably.</li>
-                <li>If you are accessing this server <strong>remotely</strong> (e.g., from an iPad), WebGPU is blocked because the connection is HTTP. You must configure secure context bypass flags.</li>
-            </ul>
-            <button class="btn" onclick="document.getElementById('webgpu-trouble-modal').style.display='flex'; if(window.switchTroubleTab) window.switchTroubleTab('linux');" style="margin-top: 12px; background: #fbbf24; color: #05070f; border: none; font-weight: 700; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
-                🛠️ Open WebGPU Setup Guide
-            </button>
-        </div>`, [], "SYSTEM");
-        return;
-    }
-    
     // Check if the local model file exists on server and show alert if missing
     if (modelUrl.startsWith('/models/')) {
         fetch(modelUrl, { method: 'HEAD' }).then(res => {
@@ -758,31 +679,33 @@ function initInferenceWorker() {
         });
     }
 
-    modelStatusText.innerHTML = "● Initializing Worker...";
-    modelStatusDetail.innerHTML = "Spawning worker...";
+    if (modelStatusText) modelStatusText.innerHTML = "● Initializing Worker...";
+    if (modelStatusDetail) modelStatusDetail.innerHTML = "Spawning worker...";
     
     if (worker) {
         worker.terminate();
     }
 
-    worker = new Worker('worker.js?v=226', { type: 'module' });
+    worker = new Worker('worker.js?v=225', { type: 'module' });
 
     worker.onmessage = (event) => {
         const { status, progress, message, actualDevice, embedding, text, error, complete } = event.data;
 
         if (status === 'progress') {
-            progressContainer.style.display = 'block';
-            progressBar.style.width = `${progress}%`;
+            if (progressContainer) progressContainer.style.display = 'block';
+            if (progressBar) progressBar.style.width = `${progress}%`;
         } else if (status === 'loading') {
-            modelStatusDetail.innerHTML = message;
+            if (modelStatusDetail) modelStatusDetail.innerHTML = message;
         } else if (status === 'info') {
             console.log("Worker Info:", message);
-            modelStatusDetail.innerHTML = message;
+            if (modelStatusDetail) modelStatusDetail.innerHTML = message;
         } else if (status === 'ready') {
-            progressContainer.style.display = 'none';
-            modelStatusText.innerHTML = `● LiteRT Ready (${actualDevice === 'webgpu' ? 'GPU' : 'CPU'})`;
-            modelStatusDetail.innerHTML = `Framework loaded on ${actualDevice.toUpperCase()}`;
-            modelStatusText.style.color = "var(--success)";
+            if (progressContainer) progressContainer.style.display = 'none';
+            if (modelStatusText) {
+                modelStatusText.innerHTML = `● LiteRT Ready (${actualDevice === 'webgpu' ? 'GPU' : 'CPU'})`;
+                modelStatusText.style.color = "var(--success)";
+            }
+            if (modelStatusDetail) modelStatusDetail.innerHTML = `Framework loaded on ${actualDevice.toUpperCase()}`;
             appendMessage(false, `✅ **System**: LiteRT LLM and embedding engines initialized successfully on **${actualDevice.toUpperCase()}** inference backend.`, [], "SYSTEM");
         } else if (status === 'embed_result') {
             handleEmbedResult(embedding);
@@ -810,63 +733,30 @@ function initInferenceWorker() {
                 chatContainer.scrollTop = chatContainer.scrollHeight;
             }
             if (complete) {
-                // Done generating tokens
+                // Done generating
                 const fullText = cleanedText.trim();
                 const questionText = window.currentQueryText;
                 const footnoteText = getSourcesFootnoteText(window.currentTopChunks);
+                const answerText = footnoteText ? `${fullText}\n\nSources:\n${footnoteText}` : fullText;
                 
-                // Avoid duplicate entries
+                // Avoid duplicate entries if both the callback and promise resolution trigger 'complete'
                 const lastHistory = chatMessageHistory[chatMessageHistory.length - 1];
-                if (!lastHistory || lastHistory.q !== questionText || lastHistory.a !== fullText) {
-                    chatMessageHistory.push({ q: questionText, a: fullText, sources: footnoteText });
+                if (!lastHistory || lastHistory.q !== questionText || lastHistory.a !== answerText) {
+                    chatMessageHistory.push({ q: questionText, a: answerText });
                     speakText(fullText);
                 }
             }
         } else if (status === 'done') {
-            // LiteRT worker generation promise has fully resolved and engine is idle
-            if (window.currentBatchResolver) {
-                const resolve = window.currentBatchResolver;
-                window.currentBatchResolver = null;
-                const lastHistory = chatMessageHistory[chatMessageHistory.length - 1] || {};
-                resolve({ 
-                    q: lastHistory.q || window.currentQueryText || "", 
-                    a: lastHistory.a || "", 
-                    sources: lastHistory.sources || "" 
-                });
-            }
+            // Finished streaming. No action needed as 'token' complete flag handles memory storage
         } else if (status === 'error') {
-            progressContainer.style.display = 'none';
-            modelStatusText.innerHTML = "● Loader Error";
-            modelStatusText.style.color = "var(--danger)";
-            modelStatusDetail.innerHTML = error;
+            if (progressContainer) progressContainer.style.display = 'none';
+            if (modelStatusText) {
+                modelStatusText.innerHTML = "● Loader Error";
+                modelStatusText.style.color = "var(--danger)";
+            }
+            if (modelStatusDetail) modelStatusDetail.innerHTML = error;
             if (window.currentSpinnerEl) window.currentSpinnerEl.remove();
-            
-            if (window.currentBatchResolver) {
-                const resolve = window.currentBatchResolver;
-                window.currentBatchResolver = null;
-                resolve({ 
-                    q: window.currentQueryText || "", 
-                    a: `Error: ${error}`, 
-                    sources: "ERROR - FAILED TO GENERATE",
-                    is_error: true 
-                });
-            }
-
-            const isWebGPUError = error.includes("navigator.gpu") || error.includes("WebGPU") || error.includes("adapter");
-            if (isWebGPUError) {
-                appendMessage(false, `❌ **Error**: ${error}
-                <br><br>
-                <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 14px; margin-top: 8px; border-left: 4px solid #fbbf24; line-height: 1.5; text-align: left;">
-                    <strong style="color: #fbbf24; font-size: 14px;">WebGPU Configuration Issue Detected:</strong><br>
-                    The inference worker failed to request a WebGPU adapter. Please follow the WebGPU troubleshooting steps for your operating system.
-                    <br>
-                    <button class="btn" onclick="document.getElementById('webgpu-trouble-modal').style.display='flex'; if(window.switchTroubleTab) window.switchTroubleTab('linux');" style="margin-top: 12px; background: #fbbf24; color: #05070f; border: none; font-weight: 700; font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
-                        🛠️ Open WebGPU Setup Guide
-                    </button>
-                </div>`, [], "SYSTEM");
-            } else {
-                appendMessage(false, `❌ **Error**: ${error}`, [], "SYSTEM");
-            }
+            appendMessage(false, `❌ **Error**: ${error}`, [], "SYSTEM");
         }
     };
 
@@ -881,11 +771,86 @@ function initInferenceWorker() {
     });
 }
 
+// ---------- Modal DOM Elements ----------
+const syncModal = document.getElementById('sync-modal');
+const modalSyncPdfDir = document.getElementById('modal-sync-pdf-dir');
+const modalSyncKbDir = document.getElementById('modal-sync-kb-dir');
+const btnCancelSync = document.getElementById('btn-cancel-sync');
+const btnConfirmSync = document.getElementById('btn-confirm-sync');
+
+const loadModal = document.getElementById('load-modal');
+const modalLoadModelPath = document.getElementById('modal-load-model-path');
+const modalLoadKbPath = document.getElementById('modal-load-kb-path');
+const modalLoadDevice = document.getElementById('modal-load-device');
+const btnCancelLoad = document.getElementById('btn-cancel-load');
+const btnConfirmLoad = document.getElementById('btn-confirm-load');
+
 // ---------- UI Event Listeners ----------
 
-btnLoadModel.addEventListener('click', () => {
-    initInferenceWorker();
+// Sync Knowledge Base button click handler
+btnSyncKb.addEventListener('click', async () => {
+    const pdfDir = pdfPathInput ? pdfPathInput.value.trim() : "/home/juan/Data/FAA/";
+    const kbDir = kbOutputPathInput ? kbOutputPathInput.value.trim() : "";
+    
+    if (!pdfDir) {
+        alert("PDF directory path cannot be empty.");
+        return;
+    }
+    
+    btnSyncKb.disabled = true;
+    btnSyncKb.innerHTML = "⏳ Syncing...";
+    
+    const targetOutputDisplay = kbDir ? `${kbDir.replace(/\/+$/, '')}/kb/` : `${pdfDir.replace(/\/+$/, '')}/kb/`;
+    appendMessage(false, `🔄 **System**: Sync started. Ingesting PDF manuals from \`${pdfDir}\` and computing local vector embeddings. Target output directory: \`${targetOutputDisplay}\`. Please wait...`, [], "SYSTEM");
+    
+    try {
+        const res = await fetch('/api/sync', { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pdf_dir: pdfDir, kb_dir: kbDir })
+        });
+        if (!res.ok) {
+            const errBody = await res.json();
+            throw new Error(errBody.message || errBody.error || "Failed to compile knowledge base");
+        }
+        const syncResult = await res.json();
+        
+        const finalKbPath = syncResult.message || targetOutputDisplay;
+        if (kbLoadPathInput) kbLoadPathInput.value = finalKbPath;
+
+        await loadKnowledgeBaseJSON();
+        await fetchPDFList();
+    } catch (e) {
+        console.error("Sync error:", e);
+        appendMessage(false, `❌ **Sync Failed**: ${e.message}`, [], "SYSTEM");
+    } finally {
+        btnSyncKb.disabled = false;
+        btnSyncKb.innerHTML = "🔄 Sync KB";
+    }
 });
+
+// Load Model button click handler
+btnLoadModel.addEventListener('click', () => {
+    const kbPath = kbLoadPathInput ? kbLoadPathInput.value.trim() : "/home/juan/Data/FAA/kb";
+    if (!kbPath) {
+        alert("Knowledge Base location path cannot be empty.");
+        return;
+    }
+
+    initInferenceWorker();
+    loadKnowledgeBaseJSON();
+    fetchPDFList();
+});
+
+if (pdfPathInput) {
+    pdfPathInput.addEventListener('change', () => {
+        const val = pdfPathInput.value.trim();
+        if (val && kbLoadPathInput) {
+            kbLoadPathInput.value = val.endsWith('/kb') ? val : val.replace(/\/+$/, '') + '/kb';
+        }
+        fetchPDFList();
+    });
+}
 
 btnSend.addEventListener('click', handleUserMessage);
 
@@ -937,29 +902,6 @@ btnClearDialog.addEventListener('click', () => {
     historyContainer.innerHTML = '';
 });
 
-btnSyncKb.addEventListener('click', async () => {
-    btnSyncKb.disabled = true;
-    btnSyncKb.innerHTML = "⏳ Syncing...";
-    appendMessage(false, "🔄 **System**: Sync started. Parsing PDF manuals inside `./PdfDir` and computing local vector embeddings. Please wait...", [], "SYSTEM");
-    
-    try {
-        const res = await fetch('/api/sync', { method: 'POST' });
-        if (!res.ok) {
-            const errBody = await res.json();
-            throw new Error(errBody.message || "Failed to compile knowledge base");
-        }
-        
-        await loadKnowledgeBaseJSON();
-        await fetchPDFList();
-    } catch (e) {
-        console.error("Sync error:", e);
-        appendMessage(false, `❌ **Sync Failed**: ${e.message}`, [], "SYSTEM");
-    } finally {
-        btnSyncKb.disabled = false;
-        btnSyncKb.innerHTML = "🔄 Sync Knowledge Base";
-    }
-});
-
 btnSaveDialog.addEventListener('click', async () => {
     if (chatMessageHistory.length === 0) {
         alert("Dialogue is empty. Engage in a Q&A session first.");
@@ -988,177 +930,6 @@ btnSaveDialog.addEventListener('click', async () => {
         btnSaveDialog.innerHTML = "💾 Save Dialog";
     }
 });
-
-const btnBatchQuestions = document.getElementById('btn-batch-questions');
-
-function answerQuestionPromise(qText) {
-    return new Promise((resolve, reject) => {
-        if (!kbData || !kbData.chunks || kbData.chunks.length === 0) {
-            reject(new Error("Knowledge Base is empty or not synchronized. Please load PDF files and click 'Sync Knowledge Base'."));
-            return;
-        }
-        if (!worker) {
-            reject(new Error("LiteRT model is not loaded yet. Please wait for model initialization."));
-            return;
-        }
-
-        window.currentBatchResolver = resolve;
-        window.currentQueryText = qText;
-        
-        // Show question in chat UI
-        appendMessage(true, qText);
-        
-        window.currentSpinnerEl = appendSpinnerBubble();
-        
-        worker.postMessage({
-            command: 'embed',
-            data: { text: qText }
-        });
-    });
-}
-
-async function answerQuestionWithAutoRetry(qText, maxRetries = 2) {
-    for (let level = 0; level <= maxRetries; level++) {
-        window.currentRetryLevel = level;
-        if (level > 0) {
-            appendMessage(false, `⚠️ **Auto-Retry Attempt ${level}/${maxRetries}**: Retrying question *"${qText}"* with truncated context window for token safety...`, [], "SYSTEM");
-            if (worker) {
-                worker.postMessage({ command: 'reset' });
-                await new Promise(res => setTimeout(res, 400));
-            }
-        }
-
-        try {
-            const result = await answerQuestionPromise(qText);
-            const isErr = !!result.is_error || (typeof result.a === 'string' && result.a.startsWith("Error:"));
-            if (!isErr) {
-                window.currentRetryLevel = 0;
-                return result;
-            }
-            if (level < maxRetries) {
-                console.warn(`Question "${qText}" failed at level ${level}. Retrying with reduced context...`);
-                continue;
-            }
-            window.currentRetryLevel = 0;
-            return result;
-        } catch (err) {
-            console.error(`Question "${qText}" threw error at level ${level}:`, err);
-            if (level < maxRetries) {
-                console.warn(`Retrying question after error...`);
-                continue;
-            }
-            window.currentRetryLevel = 0;
-            return {
-                q: qText,
-                a: `Error generating response: ${err.message}`,
-                sources: "ERROR - FAILED TO GENERATE",
-                is_error: true
-            };
-        }
-    }
-}
-
-if (btnBatchQuestions) {
-    btnBatchQuestions.addEventListener('click', async () => {
-        const filename = prompt("Enter Excel questions file name/path (e.g. MyQuestions.xlsx in ./Dialogs):", "MyQuestions.xlsx");
-        if (!filename || !filename.trim()) return;
-
-        btnBatchQuestions.disabled = true;
-        btnBatchQuestions.innerHTML = "⏳ Reading File...";
-
-        try {
-            const readRes = await fetch('/api/readquestions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename: filename.trim() })
-            });
-
-            const readData = await readRes.json();
-            if (!readRes.ok || readData.error) {
-                throw new Error(readData.error || "Failed to read questions file");
-            }
-
-            const questions = readData.questions;
-            const resolvedPath = readData.filepath;
-
-            appendMessage(false, `📑 **Batch Processing Started**: Loaded **${questions.length}** question(s) from \`${resolvedPath}\`. Starting sequential Q&A...`, [], "SYSTEM");
-
-            const batchResults = [];
-            window.isBatchProcessing = true;
-
-            try {
-                for (let i = 0; i < questions.length; i++) {
-                    const qText = questions[i];
-                    
-                    // Alert user which question is being answered
-                    appendMessage(false, `⏳ **[Question ${i + 1}/${questions.length}]** Answering: *"${qText}"*`, [], "SYSTEM");
-
-                    try {
-                        const result = await answerQuestionWithAutoRetry(qText);
-                        const isErr = !!result.is_error || (typeof result.a === 'string' && result.a.startsWith("Error:"));
-                        batchResults.push({
-                            q: result.q || qText,
-                            a: result.a || "",
-                            sources: result.sources || (isErr ? "ERROR - FAILED TO GENERATE" : ""),
-                            is_error: isErr
-                        });
-
-                        if (isErr && worker) {
-                            console.warn(`[Batch] Question ${i + 1} produced an error after retries. Resetting worker engine state for next question...`);
-                            worker.postMessage({ command: 'reset' });
-                            await new Promise(res => setTimeout(res, 500));
-                        }
-                    } catch (err) {
-                        console.error(`Error answering question ${i + 1}:`, err);
-                        batchResults.push({
-                            q: qText,
-                            a: `Error generating response: ${err.message}`,
-                            sources: "ERROR - FAILED TO GENERATE",
-                            is_error: true
-                        });
-                        if (worker) {
-                            worker.postMessage({ command: 'reset' });
-                            await new Promise(res => setTimeout(res, 500));
-                        }
-                    }
-
-                    // Brief cooldown delay to allow LiteRT WebGPU worker state cleanup between queries
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                }
-            } finally {
-                window.isBatchProcessing = false;
-                window.currentRetryLevel = 0;
-            }
-
-            appendMessage(false, `✅ **Batch Processing Completed**: All **${questions.length}** questions have been processed! Writing response file...`, [], "SYSTEM");
-
-            const saveRes = await fetch('/api/savequestionsresponses', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    original_file: resolvedPath,
-                    entries: batchResults
-                })
-            });
-
-            const saveData = await saveRes.json();
-            if (!saveRes.ok || saveData.error) {
-                throw new Error(saveData.error || "Failed to save response file");
-            }
-
-            appendMessage(false, `🎉 **Success**: Batch response file saved to \`${saveData.file}\`.`, [], "SYSTEM");
-            alert(`Batch Q&A completed!\nAll questions answered and saved to:\n${saveData.file}`);
-
-        } catch (e) {
-            console.error("Batch questions error:", e);
-            appendMessage(false, `❌ **Batch Processing Failed**: ${e.message}`, [], "SYSTEM");
-            alert(`Batch processing error: ${e.message}`);
-        } finally {
-            btnBatchQuestions.disabled = false;
-            btnBatchQuestions.innerHTML = "📑 Batch Questions Processing";
-        }
-    });
-}
 
 btnStopServer.addEventListener('click', async () => {
     if (confirm("Are you sure you want to stop the local Go server?")) {

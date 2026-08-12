@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pdflrt-cache-v10';
+const CACHE_NAME = 'pdfpadlrt-cache-v8';
 
 const urlsToCache = [
   '/',
@@ -9,14 +9,14 @@ const urlsToCache = [
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
-  '/wasm/tasks-genai.js'
+  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap'
 ];
 
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log('Opened static assets PWA cache for PdfLrt');
+        console.log('Opened static assets PWA cache for PdfPadLrt');
         return cache.addAll(urlsToCache);
       })
   );
@@ -28,10 +28,6 @@ self.addEventListener('fetch', event => {
   if (!event.request.url.startsWith('http')) return;
   // Bypass backend API calls (important: never cache POST API calls or syncs!)
   if (event.request.url.includes('/api/')) return;
-  // Bypass model directories (never intercept or try to cache massive models!)
-  if (event.request.url.includes('/models/')) return;
-  // Bypass raw database directory (loaded dynamically in memory)
-  if (event.request.url.includes('/PdfDir/')) return;
 
   event.respondWith(
     caches.match(event.request, { ignoreSearch: true })
