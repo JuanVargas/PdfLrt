@@ -17,8 +17,8 @@ mkdir -p "$ABS_OUTPUT_DIR"
 mkdir -p "$HOME/.cache/huggingface"
 
 if command -v docker &> /dev/null && docker info &> /dev/null; then
-    echo "🐳 Building/Verifying the PdfPadLrt Ingestion Docker Image..."
-    docker build -t pdfpadlrt-ingest -f Dockerfile .
+    echo "🐳 Building/Verifying the PdfLrt Ingestion Docker Image..."
+    docker build -t pdflrt-ingest -f Dockerfile .
 
     echo "🚀 Running ingestion container..."
     docker run --rm \
@@ -27,7 +27,7 @@ if command -v docker &> /dev/null && docker info &> /dev/null; then
       -v "$ABS_OUTPUT_DIR:/output_dir" \
       -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
       -w /app \
-      pdfpadlrt-ingest python3 build_knowledge_base.py --pdf-dir /pdf_input --output-dir /output_dir
+      pdflrt-ingest python3 build_knowledge_base.py --pdf-dir /pdf_input --output-dir /output_dir
 else
     echo "⚠️ Docker not detected or not running. Falling back to host python3 execution..."
     python3 build_knowledge_base.py --pdf-dir "$ABS_PDF_DIR" --output-dir "$ABS_OUTPUT_DIR"

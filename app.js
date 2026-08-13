@@ -1,4 +1,4 @@
-// app.js - PdfPadLrt Frontend Controller
+// app.js - PdfLrt Frontend Controller
 
 let worker = null;
 let kbData = null;

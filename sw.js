@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pdfpadlrt-cache-v8';
+const CACHE_NAME = 'pdflrt-cache-v8';
 
 const urlsToCache = [
   '/',
@@ -16,7 +16,7 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log('Opened static assets PWA cache for PdfPadLrt');
+        console.log('Opened static assets PWA cache for PdfLrt');
         return cache.addAll(urlsToCache);
       })
   );
