@@ -23,7 +23,7 @@ def process_pdfs(pdf_dir_arg=None, output_dir_arg=None):
     else:
         target_parent = pdf_dir
         
-    kb_dir = os.path.join(target_parent, "kb")
+    kb_dir = os.path.join(target_parent, "KB")
     os.makedirs(kb_dir, exist_ok=True)
     
     output_file = os.path.join(kb_dir, "knowledge_base.json")

@@ -606,7 +606,7 @@
             <input type="text" id="pdf-path-input" style="width: 190px; background: rgba(30, 41, 59, 0.7); border: 1px solid var(--panel-border); font-size: 12px; color: #ffffff; border-radius: 6px; padding: 6px 8px; outline: none;" placeholder="e.g. /home/juan/Data/FAA" value="/home/juan/Data/FAA" title="Directory containing PDF manuals to ingest">
             
             <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Output:</span>
-            <input type="text" id="kb-output-path-input" style="width: 150px; background: rgba(30, 41, 59, 0.7); border: 1px solid var(--panel-border); font-size: 12px; color: #ffffff; border-radius: 6px; padding: 6px 8px; outline: none;" placeholder="(Optional)" value="" title="Optional custom directory for KB output. Saves to ./kb subfolder.">
+            <input type="text" id="kb-output-path-input" style="width: 150px; background: rgba(30, 41, 59, 0.7); border: 1px solid var(--panel-border); font-size: 12px; color: #ffffff; border-radius: 6px; padding: 6px 8px; outline: none;" placeholder="(Optional)" value="" title="Optional custom directory for KB output. Saves to ./KB subfolder.">
             
             <button class="btn btn-primary" id="btn-sync-kb" style="padding: 6px 14px; font-size: 12px;" title="Ingest PDF files from specified directory">
                 🔄 Sync KB
@@ -616,7 +616,7 @@
         <!-- Model Loading Section -->
         <div style="display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.03); padding: 4px 8px; border-radius: 10px; border: 1px solid var(--panel-border);">
             <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">KB Path:</span>
-            <input type="text" id="kb-load-path-input" style="width: 190px; background: rgba(30, 41, 59, 0.7); border: 1px solid var(--panel-border); font-size: 12px; color: #ffffff; border-radius: 6px; padding: 6px 8px; outline: none;" placeholder="e.g. /home/juan/Data/FAA/kb" value="/home/juan/Data/FAA/kb" title="Location of knowledge_base.json and figures">
+            <input type="text" id="kb-load-path-input" style="width: 190px; background: rgba(30, 41, 59, 0.7); border: 1px solid var(--panel-border); font-size: 12px; color: #ffffff; border-radius: 6px; padding: 6px 8px; outline: none;" placeholder="e.g. /home/juan/Data/FAA/KB" value="/home/juan/Data/FAA/KB" title="Location of knowledge_base.json and figures">
 
             <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Model:</span>
             <input type="text" id="model-path-input" style="width: 200px; background: rgba(30, 41, 59, 0.7); border: 1px solid var(--panel-border); font-size: 12px; color: #ffffff; border-radius: 6px; padding: 6px 8px; outline: none;" placeholder="/models/gemma-4-E2B-it-web.task" value="/models/gemma-4-E2B-it-web.task" title="Path to LiteRT task or bin model file">
@@ -634,6 +634,7 @@
         <!-- Quick Actions -->
         <div style="display:flex; align-items:center; gap: 6px;">
             <button class="btn" id="btn-save-dialog" title="Save session dialog to Excel file">💾 Save</button>
+            <button class="btn" id="btn-batch-questions" title="Run questions from an Excel file sequentially">📑 Batch</button>
             <button class="btn" id="btn-clear-dialog">🧹 Clear</button>
             <button class="btn btn-danger" id="btn-stop-server">🛑 Stop</button>
             <span id="model-status" style="font-size:12px; color: var(--success); background: rgba(16, 185, 129, 0.08); padding: 6px 14px; border-radius: 20px; border: 1px solid rgba(16, 185, 129, 0.2)">
@@ -749,7 +750,7 @@
             </div>
             <div class="form-group">
                 <label class="form-label" for="modal-load-kb-path">Knowledge Base Location</label>
-                <input type="text" id="modal-load-kb-path" class="form-input" placeholder="e.g. /home/juan/Data/FAA/kb" value="/home/juan/Data/FAA/kb">
+                <input type="text" id="modal-load-kb-path" class="form-input" placeholder="e.g. /home/juan/Data/FAA/KB" value="/home/juan/Data/FAA/KB">
                 <span class="form-help">Directory containing <code>knowledge_base.json</code> and the <code>figures</code> subfolder.</span>
             </div>
             <div class="form-group">

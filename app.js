@@ -16,6 +16,7 @@ const btnMic = document.getElementById('btn-mic');
 const btnSpeaker = document.getElementById('btn-speaker');
 const btnSyncKb = document.getElementById('btn-sync-kb');
 const btnSaveDialog = document.getElementById('btn-save-dialog');
+const btnBatchQuestions = document.getElementById('btn-batch-questions');
 const btnClearDialog = document.getElementById('btn-clear-dialog');
 const btnStopServer = document.getElementById('btn-stop-server');
 const modelPathInput = document.getElementById('model-path-input');
@@ -149,7 +150,8 @@ async function loadKnowledgeBaseJSON() {
     
     let targetKbPath = kbLoadPathInput ? kbLoadPathInput.value.trim() : "";
     if (!targetKbPath) {
-        targetKbPath = pdfPathInput ? pdfPathInput.value.trim() : "PdfDir";
+        const pdfDir = pdfPathInput ? pdfPathInput.value.trim() : "PdfDir";
+        targetKbPath = pdfDir.endsWith('/KB') || pdfDir.endsWith('/KB/') ? pdfDir : pdfDir.replace(/\/+$/, '') + '/KB';
     }
 
     try {
@@ -170,8 +172,8 @@ async function loadKnowledgeBaseJSON() {
         // Resolve figure image URLs to use /api/kb/file?path=...
         if (kbData.figures && Array.isArray(kbData.figures)) {
             let baseKbDir = targetKbPath;
-            if (!baseKbDir.endsWith('/kb') && !baseKbDir.endsWith('/kb/')) {
-                baseKbDir = baseKbDir.replace(/\/+$/, '') + '/kb';
+            if (!baseKbDir.endsWith('/KB') && !baseKbDir.endsWith('/KB/') && !baseKbDir.endsWith('/kb') && !baseKbDir.endsWith('/kb/')) {
+                baseKbDir = baseKbDir.replace(/\/+$/, '') + '/KB';
             }
             kbData.figures.forEach(fig => {
                 if (fig.image && !fig.image.startsWith('data:') && !fig.image.startsWith('http')) {
@@ -375,7 +377,11 @@ async function handleUserMessage() {
                 const pageText = f.page ? ` (Page ${f.page})` : '';
                 return `[Figure ${f.id} from ${f.source}${pageText}: ${f.caption}]`;
             }).join('\n');
-            chatMessageHistory.push({ q: text, a: dialogAnswer });
+            const figSources = matchedFigs.map(f => {
+                const pageText = f.page ? ` (Page ${f.page})` : '';
+                return `${f.source}${pageText}`;
+            }).join(', ');
+            chatMessageHistory.push({ q: text, a: dialogAnswer, sources: figSources });
             return;
         } else {
             // Friendly fallback showing list of available figures
@@ -393,7 +399,7 @@ async function handleUserMessage() {
             }
             appendMessage(false, responseText, [], "VISUAL_EXPERT");
             speakText("I couldn't find a matching figure.");
-            chatMessageHistory.push({ q: text, a: responseText });
+            chatMessageHistory.push({ q: text, a: responseText, sources: "N/A" });
             return;
         }
     }
@@ -737,17 +743,25 @@ function initInferenceWorker() {
                 const fullText = cleanedText.trim();
                 const questionText = window.currentQueryText;
                 const footnoteText = getSourcesFootnoteText(window.currentTopChunks);
-                const answerText = footnoteText ? `${fullText}\n\nSources:\n${footnoteText}` : fullText;
                 
                 // Avoid duplicate entries if both the callback and promise resolution trigger 'complete'
                 const lastHistory = chatMessageHistory[chatMessageHistory.length - 1];
-                if (!lastHistory || lastHistory.q !== questionText || lastHistory.a !== answerText) {
-                    chatMessageHistory.push({ q: questionText, a: answerText });
+                if (!lastHistory || lastHistory.q !== questionText || lastHistory.a !== fullText) {
+                    chatMessageHistory.push({ q: questionText, a: fullText, sources: footnoteText });
                     speakText(fullText);
                 }
             }
         } else if (status === 'done') {
-            // Finished streaming. No action needed as 'token' complete flag handles memory storage
+            if (window.currentBatchResolver) {
+                const resolve = window.currentBatchResolver;
+                window.currentBatchResolver = null;
+                const lastHistory = chatMessageHistory[chatMessageHistory.length - 1] || {};
+                resolve({ 
+                    q: lastHistory.q || window.currentQueryText || "", 
+                    a: lastHistory.a || "", 
+                    sources: lastHistory.sources || "" 
+                });
+            }
         } else if (status === 'error') {
             if (progressContainer) progressContainer.style.display = 'none';
             if (modelStatusText) {
@@ -756,6 +770,18 @@ function initInferenceWorker() {
             }
             if (modelStatusDetail) modelStatusDetail.innerHTML = error;
             if (window.currentSpinnerEl) window.currentSpinnerEl.remove();
+
+            if (window.currentBatchResolver) {
+                const resolve = window.currentBatchResolver;
+                window.currentBatchResolver = null;
+                resolve({ 
+                    q: window.currentQueryText || "", 
+                    a: `Error: ${error}`, 
+                    sources: "ERROR - FAILED TO GENERATE",
+                    is_error: true 
+                });
+            }
+
             appendMessage(false, `❌ **Error**: ${error}`, [], "SYSTEM");
         }
     };
@@ -800,7 +826,7 @@ btnSyncKb.addEventListener('click', async () => {
     btnSyncKb.disabled = true;
     btnSyncKb.innerHTML = "⏳ Syncing...";
     
-    const targetOutputDisplay = kbDir ? `${kbDir.replace(/\/+$/, '')}/kb/` : `${pdfDir.replace(/\/+$/, '')}/kb/`;
+    const targetOutputDisplay = kbDir ? `${kbDir.replace(/\/+$/, '')}/KB/` : `${pdfDir.replace(/\/+$/, '')}/KB/`;
     appendMessage(false, `🔄 **System**: Sync started. Ingesting PDF manuals from \`${pdfDir}\` and computing local vector embeddings. Target output directory: \`${targetOutputDisplay}\`. Please wait...`, [], "SYSTEM");
     
     try {
@@ -831,7 +857,7 @@ btnSyncKb.addEventListener('click', async () => {
 
 // Load Model button click handler
 btnLoadModel.addEventListener('click', () => {
-    const kbPath = kbLoadPathInput ? kbLoadPathInput.value.trim() : "/home/juan/Data/FAA/kb";
+    const kbPath = kbLoadPathInput ? kbLoadPathInput.value.trim() : "/home/juan/Data/FAA/KB";
     if (!kbPath) {
         alert("Knowledge Base location path cannot be empty.");
         return;
@@ -846,7 +872,7 @@ if (pdfPathInput) {
     pdfPathInput.addEventListener('change', () => {
         const val = pdfPathInput.value.trim();
         if (val && kbLoadPathInput) {
-            kbLoadPathInput.value = val.endsWith('/kb') ? val : val.replace(/\/+$/, '') + '/kb';
+            kbLoadPathInput.value = val.endsWith('/KB') ? val : val.replace(/\/+$/, '') + '/KB';
         }
         fetchPDFList();
     });
@@ -908,6 +934,7 @@ btnSaveDialog.addEventListener('click', async () => {
         return;
     }
     
+    const pdfDir = pdfPathInput ? pdfPathInput.value.trim() : "/home/juan/Data/FAA";
     btnSaveDialog.disabled = true;
     btnSaveDialog.innerHTML = "💾 Saving...";
     
@@ -915,19 +942,22 @@ btnSaveDialog.addEventListener('click', async () => {
         const res = await fetch('/api/savedialog', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(chatMessageHistory)
+            body: JSON.stringify({
+                entries: chatMessageHistory,
+                pdf_dir: pdfDir
+            })
         });
         
         if (!res.ok) throw new Error("Failed to export dialogue session");
         const body = await res.json();
         
-        appendMessage(false, `💾 **System**: Dialogue session exported successfully as **${body.file}** in the \`Dialogs/\` directory.`, [], "SYSTEM");
+        appendMessage(false, `💾 **System**: Dialogue session exported successfully as \`${body.file}\`.`, [], "SYSTEM");
     } catch (e) {
         console.error("Save dialog error:", e);
         appendMessage(false, `❌ **Save Dialog Failed**: ${e.message}`, [], "SYSTEM");
     } finally {
         btnSaveDialog.disabled = false;
-        btnSaveDialog.innerHTML = "💾 Save Dialog";
+        btnSaveDialog.innerHTML = "💾 Save";
     }
 });
 
@@ -940,9 +970,175 @@ btnStopServer.addEventListener('click', async () => {
     }
 });
 
-deviceSelect.addEventListener('change', () => {
-    initInferenceWorker();
-});
+function answerQuestionPromise(qText) {
+    return new Promise((resolve, reject) => {
+        if (!kbData || !kbData.chunks || kbData.chunks.length === 0) {
+            reject(new Error("Knowledge Base is empty or not synchronized. Please load PDF files and click 'Sync Knowledge Base'."));
+            return;
+        }
+        if (!worker) {
+            reject(new Error("LiteRT model is not loaded yet. Please wait for model initialization."));
+            return;
+        }
+
+        window.currentBatchResolver = resolve;
+        window.currentQueryText = qText;
+        
+        appendMessage(true, qText);
+        window.currentSpinnerEl = appendSpinnerBubble();
+        
+        worker.postMessage({
+            command: 'embed',
+            data: { text: qText }
+        });
+    });
+}
+
+async function answerQuestionWithAutoRetry(qText, maxRetries = 2) {
+    for (let level = 0; level <= maxRetries; level++) {
+        window.currentRetryLevel = level;
+        if (level > 0) {
+            appendMessage(false, `⚠️ **Auto-Retry Attempt ${level}/${maxRetries}**: Retrying question *"${qText}"* with truncated context window for token safety...`, [], "SYSTEM");
+            if (worker) {
+                worker.postMessage({ command: 'reset' });
+                await new Promise(res => setTimeout(res, 400));
+            }
+        }
+
+        try {
+            const result = await answerQuestionPromise(qText);
+            const isErr = !!result.is_error || (typeof result.a === 'string' && result.a.startsWith("Error:"));
+            if (!isErr) {
+                window.currentRetryLevel = 0;
+                return result;
+            }
+            if (level < maxRetries) {
+                console.warn(`Question "${qText}" failed at level ${level}. Retrying with reduced context...`);
+                continue;
+            }
+            window.currentRetryLevel = 0;
+            return result;
+        } catch (err) {
+            console.error(`Question "${qText}" threw error at level ${level}:`, err);
+            if (level < maxRetries) {
+                console.warn(`Retrying question after error...`);
+                continue;
+            }
+            window.currentRetryLevel = 0;
+            return {
+                q: qText,
+                a: `Error generating response: ${err.message}`,
+                sources: "ERROR - FAILED TO GENERATE",
+                is_error: true
+            };
+        }
+    }
+}
+
+if (btnBatchQuestions) {
+    btnBatchQuestions.addEventListener('click', async () => {
+        const pdfDir = pdfPathInput ? pdfPathInput.value.trim() : "/home/juan/Data/FAA";
+        const dialogsDir = pdfDir.endsWith('/') ? `${pdfDir}Dialogs` : `${pdfDir}/Dialogs`;
+        const filename = prompt(`Enter Excel questions file name (defaults to 'questions.xlsx' inside '${dialogsDir}/'):`, "questions.xlsx");
+        if (!filename || !filename.trim()) return;
+
+        btnBatchQuestions.disabled = true;
+        btnBatchQuestions.innerHTML = "⏳ Reading File...";
+
+        try {
+            const readRes = await fetch('/api/readquestions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    filename: filename.trim(),
+                    pdf_dir: pdfDir
+                })
+            });
+
+            const readData = await readRes.json();
+            if (!readRes.ok || readData.error) {
+                throw new Error(readData.error || "Failed to read questions file");
+            }
+
+            const questions = readData.questions;
+            const resolvedPath = readData.filepath;
+
+            appendMessage(false, `📑 **Batch Processing Started**: Loaded **${questions.length}** question(s) from \`${resolvedPath}\`. Starting sequential Q&A...`, [], "SYSTEM");
+
+            const batchResults = [];
+            window.isBatchProcessing = true;
+
+            try {
+                for (let i = 0; i < questions.length; i++) {
+                    const qText = questions[i];
+                    appendMessage(false, `⏳ **[Question ${i + 1}/${questions.length}]** Answering: *"${qText}"*`, [], "SYSTEM");
+
+                    try {
+                        const result = await answerQuestionWithAutoRetry(qText);
+                        const isErr = !!result.is_error || (typeof result.a === 'string' && result.a.startsWith("Error:"));
+                        batchResults.push({
+                            q: result.q || qText,
+                            a: result.a || "",
+                            sources: result.sources || (isErr ? "ERROR - FAILED TO GENERATE" : ""),
+                            is_error: isErr
+                        });
+
+                        if (isErr && worker) {
+                            console.warn(`[Batch] Question ${i + 1} produced an error after retries. Resetting worker engine state for next question...`);
+                            worker.postMessage({ command: 'reset' });
+                            await new Promise(res => setTimeout(res, 500));
+                        }
+                    } catch (err) {
+                        console.error(`Error answering question ${i + 1}:`, err);
+                        batchResults.push({
+                            q: qText,
+                            a: `Error generating response: ${err.message}`,
+                            sources: "ERROR - FAILED TO GENERATE",
+                            is_error: true
+                        });
+                        if (worker) {
+                            worker.postMessage({ command: 'reset' });
+                            await new Promise(res => setTimeout(res, 500));
+                        }
+                    }
+
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                }
+            } finally {
+                window.isBatchProcessing = false;
+                window.currentRetryLevel = 0;
+            }
+
+            appendMessage(false, `✅ **Batch Processing Completed**: All **${questions.length}** questions have been processed! Writing response file...`, [], "SYSTEM");
+
+            const saveRes = await fetch('/api/savequestionsresponses', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    original_file: resolvedPath,
+                    entries: batchResults,
+                    pdf_dir: pdfDir
+                })
+            });
+
+            const saveData = await saveRes.json();
+            if (!saveRes.ok || saveData.error) {
+                throw new Error(saveData.error || "Failed to save response file");
+            }
+
+            appendMessage(false, `🎉 **Success**: Batch response file saved to \`${saveData.file}\`.`, [], "SYSTEM");
+            alert(`Batch Q&A completed!\nAll questions answered and saved to:\n${saveData.file}`);
+
+        } catch (e) {
+            console.error("Batch questions error:", e);
+            appendMessage(false, `❌ **Batch Processing Failed**: ${e.message}`, [], "SYSTEM");
+            alert(`Batch processing error: ${e.message}`);
+        } finally {
+            btnBatchQuestions.disabled = false;
+            btnBatchQuestions.innerHTML = "📑 Batch";
+        }
+    });
+}
 
 // ---------- Initialization ----------
 

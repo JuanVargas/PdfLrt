@@ -50,8 +50,9 @@ type KnowledgeBase struct {
 }
 
 type DialogEntry struct {
-	Q string `json:"q"`
-	A string `json:"a"`
+	Q       string `json:"q"`
+	A       string `json:"a"`
+	Sources string `json:"sources"`
 }
 
 // Global Memory Vector Database Metadata
@@ -83,6 +84,8 @@ func loadKnowledgeBaseStats(customKbPath string) error {
 		if err == nil && fi.IsDir() {
 			if _, err := os.Stat(filepath.Join(customKbPath, "knowledge_base.json")); err == nil {
 				kbFile = filepath.Join(customKbPath, "knowledge_base.json")
+			} else if _, err := os.Stat(filepath.Join(customKbPath, "KB", "knowledge_base.json")); err == nil {
+				kbFile = filepath.Join(customKbPath, "KB", "knowledge_base.json")
 			} else {
 				kbFile = filepath.Join(customKbPath, "kb", "knowledge_base.json")
 			}
@@ -90,7 +93,9 @@ func loadKnowledgeBaseStats(customKbPath string) error {
 			kbFile = customKbPath
 		}
 	} else {
-		if _, err := os.Stat(filepath.Join("PdfDir", "kb", "knowledge_base.json")); err == nil {
+		if _, err := os.Stat(filepath.Join("PdfDir", "KB", "knowledge_base.json")); err == nil {
+			kbFile = filepath.Join("PdfDir", "KB", "knowledge_base.json")
+		} else if _, err := os.Stat(filepath.Join("PdfDir", "kb", "knowledge_base.json")); err == nil {
 			kbFile = filepath.Join("PdfDir", "kb", "knowledge_base.json")
 		} else {
 			kbFile = filepath.Join("PdfDir", "knowledge_base.json")
@@ -241,7 +246,7 @@ func handleSyncKnowledgeBase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetKbFolder := filepath.Join(req.KbDir, "kb")
+	targetKbFolder := filepath.Join(req.KbDir, "KB")
 	fmt.Printf("✅ Knowledge base built successfully at %s.\n", targetKbFolder)
 
 	_ = loadKnowledgeBaseStats(targetKbFolder)
@@ -263,14 +268,15 @@ func handleKBData(w http.ResponseWriter, r *http.Request) {
 
 	targetPath := r.URL.Query().Get("path")
 	if targetPath == "" {
-		targetPath = filepath.Join("PdfDir", "kb", "knowledge_base.json")
+		targetPath = filepath.Join("PdfDir", "KB", "knowledge_base.json")
 	}
 
 	fi, err := os.Stat(targetPath)
 	if err == nil && fi.IsDir() {
-		kbFile := filepath.Join(targetPath, "knowledge_base.json")
-		if _, err := os.Stat(kbFile); err == nil {
-			targetPath = kbFile
+		if _, err := os.Stat(filepath.Join(targetPath, "knowledge_base.json")); err == nil {
+			targetPath = filepath.Join(targetPath, "knowledge_base.json")
+		} else if _, err := os.Stat(filepath.Join(targetPath, "KB", "knowledge_base.json")); err == nil {
+			targetPath = filepath.Join(targetPath, "KB", "knowledge_base.json")
 		} else {
 			targetPath = filepath.Join(targetPath, "kb", "knowledge_base.json")
 		}
@@ -278,10 +284,21 @@ func handleKBData(w http.ResponseWriter, r *http.Request) {
 
 	data, err := os.ReadFile(targetPath)
 	if err != nil {
-		// Fallback to legacy location
-		fallback := filepath.Join("PdfDir", "knowledge_base.json")
-		data, err = os.ReadFile(fallback)
-		if err != nil {
+		// Fallbacks
+		fallbacks := []string{
+			filepath.Join("PdfDir", "KB", "knowledge_base.json"),
+			filepath.Join("PdfDir", "kb", "knowledge_base.json"),
+			filepath.Join("PdfDir", "knowledge_base.json"),
+		}
+		found := false
+		for _, fb := range fallbacks {
+			if d, errFb := os.ReadFile(fb); errFb == nil {
+				data = d
+				found = true
+				break
+			}
+		}
+		if !found {
 			http.Error(w, fmt.Sprintf("Failed to read knowledge_base.json at %s: %v", targetPath, err), http.StatusNotFound)
 			return
 		}
@@ -321,19 +338,34 @@ func handleSaveDialog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var dialogs []DialogEntry
-	if err := json.Unmarshal(bodyBytes, &dialogs); err != nil {
-		http.Error(w, "Error parsing json", http.StatusBadRequest)
-		return
+	var reqPayload struct {
+		Entries []DialogEntry `json:"entries"`
+		PdfDir  string        `json:"pdf_dir"`
 	}
 
-	targetDir := filepath.Join("Dialogs")
+	var dialogs []DialogEntry
+	pdfDir := r.URL.Query().Get("pdf_dir")
+
+	if err := json.Unmarshal(bodyBytes, &reqPayload); err == nil && len(reqPayload.Entries) > 0 {
+		dialogs = reqPayload.Entries
+		if reqPayload.PdfDir != "" {
+			pdfDir = reqPayload.PdfDir
+		}
+	} else {
+		_ = json.Unmarshal(bodyBytes, &dialogs)
+	}
+
+	pdfDir = strings.TrimSpace(pdfDir)
+	if pdfDir == "" {
+		pdfDir = "PdfDir"
+	}
+
+	targetDir := filepath.Join(pdfDir, "Dialogs")
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	// File named "PdfLrt_Dialog_date_time.xlsx" as requested
 	filename := fmt.Sprintf("PdfLrt_Dialog_%s.xlsx", time.Now().Format("20060102_150405"))
 	targetFile := filepath.Join(targetDir, filename)
 
@@ -342,28 +374,28 @@ func handleSaveDialog(w http.ResponseWriter, r *http.Request) {
 		_ = f.Close()
 	}()
 
-	// Columns named "Questions" and "Answers" as requested
 	_ = f.SetCellValue("Sheet1", "A1", "Questions")
-	_ = f.SetCellValue("Sheet1", "B1", "Answers")
+	_ = f.SetCellValue("Sheet1", "B1", "Responses")
+	_ = f.SetCellValue("Sheet1", "C1", "Sources")
 
-	// Apply headers styling
 	style, err := f.NewStyle(&excelize.Style{
 		Font: &excelize.Font{Bold: true, Color: "FFFFFF"},
 		Fill: excelize.Fill{Type: "pattern", Color: []string{"3B82F6"}, Pattern: 1},
 	})
 	if err == nil {
-		_ = f.SetCellStyle("Sheet1", "A1", "B1", style)
+		_ = f.SetCellStyle("Sheet1", "A1", "C1", style)
 	}
 
 	for i, entry := range dialogs {
 		row := i + 2
 		_ = f.SetCellValue("Sheet1", fmt.Sprintf("A%d", row), entry.Q)
 		_ = f.SetCellValue("Sheet1", fmt.Sprintf("B%d", row), entry.A)
+		_ = f.SetCellValue("Sheet1", fmt.Sprintf("C%d", row), entry.Sources)
 	}
 
-	// Set column widths for nice appearance
 	_ = f.SetColWidth("Sheet1", "A", "A", 40)
 	_ = f.SetColWidth("Sheet1", "B", "B", 60)
+	_ = f.SetColWidth("Sheet1", "C", "C", 40)
 
 	if err := f.SaveAs(targetFile); err != nil {
 		fmt.Printf("Error saving excel file: %v\n", err)
@@ -372,7 +404,254 @@ func handleSaveDialog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Printf("✅ Saved dialog session to %s with %d entries.\n", targetFile, len(dialogs))
-	writeJSON(w, http.StatusOK, APIResponse{Status: "success", File: filename})
+	writeJSON(w, http.StatusOK, APIResponse{Status: "success", File: targetFile})
+}
+
+type ReadQuestionsReq struct {
+	Filename string `json:"filename"`
+	PdfDir   string `json:"pdf_dir"`
+}
+
+type ReadQuestionsResp struct {
+	Status    string   `json:"status,omitempty"`
+	Error     string   `json:"error,omitempty"`
+	Questions []string `json:"questions,omitempty"`
+	FilePath  string   `json:"filepath,omitempty"`
+}
+
+func handleReadQuestions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req ReadQuestionsReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(ReadQuestionsResp{Error: "Invalid JSON request"})
+		return
+	}
+
+	pdfDir := strings.TrimSpace(req.PdfDir)
+	if pdfDir == "" {
+		pdfDir = "PdfDir"
+	}
+
+	targetName := strings.TrimSpace(req.Filename)
+	if targetName == "" {
+		targetName = "questions.xlsx"
+	}
+
+	// Priority resolution for questions.xlsx location:
+	// 1. Inside the specified PDF source directory (e.g. /home/juan/Data/FAA/questions.xlsx)
+	// 2. Direct path specified by user (absolute or relative to server root)
+	// 3. Fallback in Dialogs folder
+	var candidates []string
+	baseNames := []string{targetName}
+	if !strings.HasSuffix(strings.ToLower(targetName), ".xlsx") {
+		baseNames = append(baseNames, targetName+".xlsx")
+	}
+
+	for _, name := range baseNames {
+		candidates = append(candidates, filepath.Join(pdfDir, name))
+		candidates = append(candidates, name)
+		candidates = append(candidates, filepath.Join("Dialogs", name))
+	}
+
+	filePath := ""
+	for _, cand := range candidates {
+		if fi, err := os.Stat(cand); err == nil && !fi.IsDir() {
+			filePath = cand
+			break
+		}
+	}
+
+	if filePath == "" {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(ReadQuestionsResp{
+			Error: fmt.Sprintf("Failed to find Excel file '%s' in PDF directory '%s', current working directory, or Dialogs folder", targetName, pdfDir),
+		})
+		return
+	}
+
+	f, err := excelize.OpenFile(filePath)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(ReadQuestionsResp{Error: fmt.Sprintf("Failed to open file '%s': %v", filePath, err)})
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	sheetName := f.GetSheetName(0)
+	if sheetName == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(ReadQuestionsResp{Error: "Excel file has no sheets"})
+		return
+	}
+
+	rows, err := f.GetRows(sheetName)
+	if err != nil || len(rows) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(ReadQuestionsResp{Error: "Excel sheet is empty"})
+		return
+	}
+
+	// Find column index for header "Questions"
+	qColIndex := -1
+	headerRow := rows[0]
+	for colIdx, cell := range headerRow {
+		if strings.EqualFold(strings.TrimSpace(cell), "Questions") {
+			qColIndex = colIdx
+			break
+		}
+	}
+
+	if qColIndex == -1 {
+		// Fallback to column 0 if header "Questions" not explicitly found
+		qColIndex = 0
+	}
+
+	var questions []string
+	for i := 1; i < len(rows); i++ {
+		row := rows[i]
+		if qColIndex < len(row) {
+			qText := strings.TrimSpace(row[qColIndex])
+			if qText != "" {
+				questions = append(questions, qText)
+			}
+		}
+	}
+
+	if len(questions) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(ReadQuestionsResp{Error: fmt.Sprintf("No questions found in file '%s'", filePath)})
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(ReadQuestionsResp{
+		Status:    "success",
+		Questions: questions,
+		FilePath:  filePath,
+	})
+}
+
+type SaveBatchEntry struct {
+	Q       string `json:"q"`
+	A       string `json:"a"`
+	Sources string `json:"sources"`
+	IsError bool   `json:"is_error"`
+}
+
+type SaveBatchReq struct {
+	OriginalFile string           `json:"original_file"`
+	Entries      []SaveBatchEntry `json:"entries"`
+	PdfDir       string           `json:"pdf_dir"`
+}
+
+type SaveBatchResp struct {
+	Status string `json:"status,omitempty"`
+	Error  string `json:"error,omitempty"`
+	File   string `json:"file,omitempty"`
+}
+
+func handleSaveQuestionsResponses(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req SaveBatchReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(SaveBatchResp{Error: "Invalid JSON request"})
+		return
+	}
+
+	if len(req.Entries) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(SaveBatchResp{Error: "No responses to save"})
+		return
+	}
+
+	pdfDir := strings.TrimSpace(req.PdfDir)
+	if pdfDir == "" {
+		pdfDir = "PdfDir"
+	}
+
+	origPath := req.OriginalFile
+	var outputFilePath string
+
+	if origPath != "" {
+		dir := filepath.Dir(origPath)
+		base := filepath.Base(origPath)
+		ext := filepath.Ext(base)
+		nameWithoutExt := strings.TrimSuffix(base, ext)
+
+		outputFilename := fmt.Sprintf("%s_Responses%s", nameWithoutExt, ext)
+		outputFilePath = filepath.Join(dir, outputFilename)
+	} else {
+		targetDir := filepath.Join(pdfDir, "Dialogs")
+		_ = os.MkdirAll(targetDir, 0755)
+		outputFilePath = filepath.Join(targetDir, "questions_Responses.xlsx")
+	}
+
+	f := excelize.NewFile()
+	defer func() { _ = f.Close() }()
+
+	_ = f.SetCellValue("Sheet1", "A1", "Questions")
+	_ = f.SetCellValue("Sheet1", "B1", "Responses")
+	_ = f.SetCellValue("Sheet1", "C1", "Sources")
+
+	headerStyle, err := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true, Color: "FFFFFF"},
+		Fill: excelize.Fill{Type: "pattern", Color: []string{"3B82F6"}, Pattern: 1},
+	})
+	if err == nil {
+		_ = f.SetCellStyle("Sheet1", "A1", "C1", headerStyle)
+	}
+
+	errStyle, errStyleErr := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true, Color: "991B1B"},
+		Fill: excelize.Fill{Type: "pattern", Color: []string{"FEE2E2"}, Pattern: 1},
+	})
+
+	for i, entry := range req.Entries {
+		row := i + 2
+		_ = f.SetCellValue("Sheet1", fmt.Sprintf("A%d", row), entry.Q)
+		_ = f.SetCellValue("Sheet1", fmt.Sprintf("B%d", row), entry.A)
+		
+		sourcesVal := entry.Sources
+		isErr := entry.IsError || strings.HasPrefix(strings.TrimSpace(entry.A), "Error:") || strings.HasPrefix(strings.TrimSpace(entry.A), "Error generating response:")
+		if isErr && (sourcesVal == "" || sourcesVal == "ERROR - FAILED TO GENERATE") {
+			sourcesVal = "ERROR - FAILED TO GENERATE"
+		}
+		_ = f.SetCellValue("Sheet1", fmt.Sprintf("C%d", row), sourcesVal)
+
+		if isErr && errStyleErr == nil {
+			_ = f.SetCellStyle("Sheet1", fmt.Sprintf("A%d", row), fmt.Sprintf("C%d", row), errStyle)
+		}
+	}
+
+	_ = f.SetColWidth("Sheet1", "A", "A", 40)
+	_ = f.SetColWidth("Sheet1", "B", "B", 60)
+	_ = f.SetColWidth("Sheet1", "C", "C", 40)
+
+	if err := f.SaveAs(outputFilePath); err != nil {
+		fmt.Printf("Error saving batch responses file: %v\n", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(SaveBatchResp{Error: fmt.Sprintf("Failed to save responses file: %v", err)})
+		return
+	}
+
+	fmt.Printf("✅ Saved batch responses to %s with %d entries.\n", outputFilePath, len(req.Entries))
+	_ = json.NewEncoder(w).Encode(SaveBatchResp{
+		Status: "success",
+		File:   outputFilePath,
+	})
 }
 
 func downloadWasmFiles() {
@@ -454,6 +733,8 @@ func main() {
 	http.HandleFunc("/api/reload", handleReloadIndex)
 	http.HandleFunc("/api/sync", handleSyncKnowledgeBase)
 	http.HandleFunc("/api/savedialog", handleSaveDialog)
+	http.HandleFunc("/api/readquestions", handleReadQuestions)
+	http.HandleFunc("/api/savequestionsresponses", handleSaveQuestionsResponses)
 	http.HandleFunc("/api/kb/data", handleKBData)
 	http.HandleFunc("/api/kb/file", handleKBFile)
 
