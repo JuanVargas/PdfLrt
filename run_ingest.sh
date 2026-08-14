@@ -3,8 +3,25 @@
 
 set -e
 
-RAW_PDF_DIR="${1:-./PdfDir}"
-RAW_OUTPUT_DIR="${2:-$RAW_PDF_DIR}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+RAW_PDF_DIR="$1"
+RAW_OUTPUT_DIR="$2"
+
+if [ -z "$RAW_PDF_DIR" ]; then
+    echo "========================================================================"
+    echo "📂 PdfLrt Knowledge Base Ingestion Setup"
+    echo "========================================================================"
+    read -rp "Enter path to PDF folder [default: ./PdfDir]: " RAW_PDF_DIR
+fi
+
+RAW_PDF_DIR="${RAW_PDF_DIR:-./PdfDir}"
+
+if [ -z "$RAW_OUTPUT_DIR" ]; then
+    read -rp "Enter output path for Knowledge Base [default: $RAW_PDF_DIR]: " RAW_OUTPUT_DIR
+fi
+
+RAW_OUTPUT_DIR="${RAW_OUTPUT_DIR:-$RAW_PDF_DIR}"
 
 ABS_PDF_DIR=$(realpath -m "$RAW_PDF_DIR")
 ABS_OUTPUT_DIR=$(realpath -m "$RAW_OUTPUT_DIR")
@@ -18,11 +35,11 @@ mkdir -p "$HOME/.cache/huggingface"
 
 if command -v docker &> /dev/null && docker info &> /dev/null; then
     echo "🐳 Building/Verifying the PdfLrt Ingestion Docker Image..."
-    docker build -t pdflrt-ingest -f Dockerfile .
+    docker build -t pdflrt-ingest -f "$SCRIPT_DIR/Dockerfile" "$SCRIPT_DIR"
 
     echo "🚀 Running ingestion container..."
     docker run --rm \
-      -v "$(pwd):/app" \
+      -v "$SCRIPT_DIR:/app" \
       -v "$ABS_PDF_DIR:/pdf_input" \
       -v "$ABS_OUTPUT_DIR:/output_dir" \
       -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
@@ -30,8 +47,9 @@ if command -v docker &> /dev/null && docker info &> /dev/null; then
       pdflrt-ingest python3 build_knowledge_base.py --pdf-dir /pdf_input --output-dir /output_dir
 else
     echo "⚠️ Docker not detected or not running. Falling back to host python3 execution..."
-    python3 build_knowledge_base.py --pdf-dir "$ABS_PDF_DIR" --output-dir "$ABS_OUTPUT_DIR"
+    python3 "$SCRIPT_DIR/build_knowledge_base.py" --pdf-dir "$ABS_PDF_DIR" --output-dir "$ABS_OUTPUT_DIR"
 fi
 
 echo "✅ PDF Pre-processing and embedding generation complete!"
+
 

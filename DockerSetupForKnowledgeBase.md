@@ -7,7 +7,7 @@ avoiding the need to install Python dependencies on the host machine.
 
 1. Docker must be running on the system.
 
-2. A folder named PdfDir must be already present under ../PdfLrt/ with the PDF files that will be ingested
+2. A folder containing the PDF files to be ingested (defaults to `./PdfDir` if omitted).
 
 ## Setup & Running
 
@@ -15,24 +15,24 @@ avoiding the need to install Python dependencies on the host machine.
 
 From the terminal console execute these commands:
 
-1. cd ../PdfLrt
-
-2. **Make the script executable:**
+1. **Make the script executable:**
    ```bash
    chmod +x run_ingest.sh
    ```
 
-3. **Execute the ingestion:**
+2. **Execute the ingestion:**
    ```bash
-   ./run_ingest.sh
+   ./run_ingest.sh [PATH_TO_PDF_DIR] [PATH_TO_OUTPUT_DIR]
    ```
+   *If arguments are omitted, the script will prompt interactively for the PDF directory path (defaulting to `./PdfDir`).*
 
 ### Windows
 
-1. **Execute the batch script from a command prompt (cmd.exe) or Git Bash:**
+1. **Execute the batch script from a command prompt (cmd.exe), PowerShell, or Git Bash:**
    ```cmd
-   run_ingest.bat
+   run_ingest.bat [PATH_TO_PDF_DIR] [PATH_TO_OUTPUT_DIR]
    ```
+   *If arguments are omitted, the script will prompt interactively for the PDF directory path (defaulting to `.\PdfDir`).*
 
    > [!NOTE]
    > When executing Docker commands from Git Bash or MSYS on Windows, container paths starting with a slash (like `/app` or `/root/.cache`) are automatically converted into Windows host paths (e.g. `C:\Program Files\Git\app`), which causes the build/run to fail since that path does not exist on the host. The `run_ingest.bat` script automatically disables this by setting `MSYS_NO_PATHCONV=1` for the duration of the script.
@@ -40,9 +40,9 @@ From the terminal console execute these commands:
 ## What it does:
 1. Builds a Docker image named `pdflrt-ingest` using the [Dockerfile](file:///home/juan/code/PdfLrt/Dockerfile).
 
-2. Runs the container mounting the current directory to `/app` (so it can read `/PdfDir` and write `knowledge_base.json`).
+2. Mounts the `PdfLrt` code directory to `/app` (so the container accesses local scripts and models in `./models/nomic-ai/nomic-embed-text-v1.5`), the PDF input directory to `/pdf_input`, and the output directory to `/output_dir`.
 
-3. **Model Caching (Important):** Mounts the host's Hugging Face cache folder (`~/.cache/huggingface` on macOS/Linux or `%USERPROFILE%\.cache\huggingface` on Windows) to the container's `/root/.cache/huggingface`. This ensures that the embedding model (`nomic-ai/nomic-embed-text-v1.5`) is cached on your host machine and won't need to be re-downloaded (approx. 500MB) on subsequent runs.
+3. **Model Caching (Important):** Checks for offline local embedding models first (`models/nomic-ai/nomic-embed-text-v1.5`). If internet connection is present and local model is missing, it mounts the host's Hugging Face cache folder (`~/.cache/huggingface` on macOS/Linux or `%USERPROFILE%\.cache\huggingface` on Windows) to `/root/.cache/huggingface`.
 
 END of DOC
 ---

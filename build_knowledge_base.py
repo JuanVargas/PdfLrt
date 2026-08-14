@@ -1,5 +1,8 @@
 import os
-import fitz  # PyMuPDF
+try:
+    import pymupdf as fitz  # PyMuPDF
+except ImportError:
+    import fitz
 import json
 import base64
 import re
@@ -44,29 +47,39 @@ def process_pdfs(pdf_dir_arg=None, output_dir_arg=None):
         return
 
     # Check if we can load/download the embedding model
-    model_local_path = "models/nomic-ai/nomic-embed-text-v1.5"
+    model_base_path = os.path.join(BASE_DIR, "models", "nomic-ai", "nomic-embed-text-v1.5")
+    model_cwd_path = os.path.abspath(os.path.join("models", "nomic-ai", "nomic-embed-text-v1.5"))
     model_hf_name = "nomic-ai/nomic-embed-text-v1.5"
     
     print("Loading embedding model...")
     model = None
     
-    # Try loading from local path first
-    if os.path.exists(model_local_path):
-        print(f"Attempting to load from local directory: {model_local_path}...")
+    candidate_local_paths = []
+    if os.path.exists(model_base_path):
+        candidate_local_paths.append(model_base_path)
+    if os.path.exists(model_cwd_path) and model_cwd_path not in candidate_local_paths:
+        candidate_local_paths.append(model_cwd_path)
+    
+    # Try loading from local candidate directories first
+    for path in candidate_local_paths:
+        print(f"Attempting to load from local directory: {path}...")
         try:
-            model = SentenceTransformer(model_local_path, trust_remote_code=True)
+            model = SentenceTransformer(path, trust_remote_code=True)
             print("Successfully loaded model from local directory.")
+            break
         except Exception as e:
-            print(f"Warning: Failed to load from local directory: {e}")
+            print(f"Warning: Failed to load from local directory {path}: {e}")
             
-    # If local load failed or directory was not found, try Hugging Face Hub
+    # If local load failed or directories were not found, try Hugging Face Hub as fallback
     if model is None:
         print(f"Attempting to download/load from Hugging Face Hub: {model_hf_name}...")
         try:
             model = SentenceTransformer(model_hf_name, trust_remote_code=True)
             print("Successfully loaded model from Hugging Face Hub.")
         except Exception as e:
-            print(f"Failed to load embedding model: {e}")
+            print(f"Failed to load embedding model from Hugging Face Hub: {e}")
+            print("If running offline, please ensure local model files exist at:")
+            print(f"  -> {model_base_path}")
             sys.exit(1)
 
     pdf_files = [f for f in os.listdir(pdf_dir) if f.lower().endswith(".pdf")]

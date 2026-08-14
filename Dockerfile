@@ -26,4 +26,5 @@ RUN pip install \
     --no-cache-dir -r /app/requirements.txt
 
 # Run the ingestion script
-CMD ["python3", "build_knowledge_base.py"]
+CMD ["python3", "build_knowledge_base.py", "--pdf-dir", "/pdf_input", "--output-dir", "/output_dir"]
+
