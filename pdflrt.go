@@ -228,12 +228,23 @@ func handleSyncKnowledgeBase(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("🔄 Triggering knowledge base synchronization (PDF Dir: %s, Output Dir: %s)...\n", req.PdfDir, req.KbDir)
 
+	workDir, _ := os.Getwd()
+
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", "/c", "run_ingest.bat", req.PdfDir, req.KbDir)
+		scriptPath := filepath.Join(workDir, "run_ingest.bat")
+		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+			scriptPath = "run_ingest.bat"
+		}
+		cmd = exec.Command("cmd", "/c", scriptPath, req.PdfDir, req.KbDir)
 	} else {
-		cmd = exec.Command("/bin/bash", "./run_ingest.sh", req.PdfDir, req.KbDir)
+		scriptPath := filepath.Join(workDir, "run_ingest.sh")
+		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+			scriptPath = "./run_ingest.sh"
+		}
+		cmd = exec.Command("bash", scriptPath, req.PdfDir, req.KbDir)
 	}
+	cmd.Dir = workDir
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

@@ -52,8 +52,20 @@ if command -v docker &> /dev/null && docker info &> /dev/null; then
       -w /app \
       pdflrt-ingest python3 build_knowledge_base.py --pdf-dir /pdf_input --output-dir /output_dir
 else
-    echo "⚠️ Docker not detected or not running. Falling back to host python3 execution..."
-    python3 "$SCRIPT_DIR/build_knowledge_base.py" --pdf-dir "$ABS_PDF_DIR" --output-dir "$ABS_OUTPUT_DIR"
+    echo "⚠️ Docker not detected or not running. Falling back to host Python execution..."
+    PYTHON_CMD=""
+    if command -v python3 &> /dev/null; then
+        PYTHON_CMD="python3"
+    elif command -v python &> /dev/null; then
+        PYTHON_CMD="python"
+    fi
+
+    if [ -n "$PYTHON_CMD" ]; then
+        "$PYTHON_CMD" "$SCRIPT_DIR/build_knowledge_base.py" --pdf-dir "$ABS_PDF_DIR" --output-dir "$ABS_OUTPUT_DIR"
+    else
+        echo "❌ Error: Neither Docker nor Python is available in system PATH!"
+        exit 1
+    fi
 fi
 
 if [ "$ABS_OUTPUT_DIR" != "$SCRIPT_DIR/PdfDir" ]; then
@@ -64,7 +76,9 @@ if [ "$ABS_OUTPUT_DIR" != "$SCRIPT_DIR/PdfDir" ]; then
     fi
     if [ -d "$ABS_OUTPUT_DIR/KB/figures" ]; then
         mkdir -p "$SCRIPT_DIR/PdfDir/KB/figures"
-        cp -r "$ABS_OUTPUT_DIR/KB/figures/"* "$SCRIPT_DIR/PdfDir/KB/figures/" 2>/dev/null || true
+        if [ -n "$(ls -A "$ABS_OUTPUT_DIR/KB/figures" 2>/dev/null)" ]; then
+            cp -r "$ABS_OUTPUT_DIR/KB/figures/." "$SCRIPT_DIR/PdfDir/KB/figures/"
+        fi
     fi
 fi
 
