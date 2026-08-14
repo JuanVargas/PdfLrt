@@ -1,5 +1,0 @@
-pymupdf
-sentence-transformers
-numpy
-requests
-einops
