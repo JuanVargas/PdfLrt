@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PdfLrt - LiteRT Offline Document Assistant</title>
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+    <meta name="theme-color" content="#0b0f19">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #05070f;
+            --panel-bg: rgba(13, 20, 38, 0.6);
+            --panel-border: rgba(255, 255, 255, 0.07);
+            --border-glow: rgba(59, 130, 246, 0.15);
+            --text-main: #f1f5f9;
+            --text-muted: #64748b;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --accent-gradient: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            --danger: #ef4444;
+            --success: #10b981;
+            --warning: #f59e0b;
+        }
+
+        * { 
+            box-sizing: border-box; 
+            margin: 0; 
+            padding: 0; 
+            font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; 
+        }
+
+        body { 
+            background: radial-gradient(circle at top right, #0d1224, var(--bg-color), #020308);
+            color: var(--text-main); 
+            height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden; 
+        }
+
+        /* Topbar Style */
+        .topbar { 
+            background: rgba(8, 12, 28, 0.85); 
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--panel-border); 
+            padding: 14px 24px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            gap: 16px; 
+            flex-wrap: wrap;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+            z-index: 10;
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            font-size: 24px;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+        }
+
+        .logo-title {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            color: #ffffff;
+        }
+
+        /* Buttons & Actions */
+        .btn { 
+            background: rgba(30, 41, 59, 0.4); 
+            color: var(--text-main); 
+            border: 1px solid var(--panel-border); 
+            padding: 8px 18px; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 13px; 
+            font-weight: 600;
+            display: inline-flex; 
+            align-items: center; 
+            gap: 8px; 
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); 
+            backdrop-filter: blur(8px);
+        }
+        .btn:hover { 
+            background: rgba(30, 41, 59, 0.8); 
+            border-color: rgba(59, 130, 246, 0.4);
+            box-shadow: 0 0 12px var(--border-glow);
+            transform: translateY(-1px);
+        }
+        .btn:active {
+            transform: translateY(0);
+        }
+        .btn-primary { 
+            background: var(--accent-gradient); 
+            border-color: transparent; 
+            box-shadow: 0 4px 14px rgba(59, 130, 246, 0.3);
+        }
+        .btn-primary:hover { 
+            background: linear-gradient(135deg, #2563eb, #1d4ed8); 
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.45);
+        }
+        .btn-danger { 
+            color: #ffffff; 
+            border-color: rgba(239, 68, 68, 0.4);
+        }
+        .btn-danger:hover { 
+            background: rgba(239, 68, 68, 0.2); 
+            border-color: var(--danger);
+            box-shadow: 0 0 12px rgba(239, 68, 68, 0.2);
+        }
+
+        /* Workspace Layout */
+        .workspace { 
+            display: flex; 
+            flex-grow: 1; 
+            overflow: hidden; 
+            flex-direction: column; 
+            position: relative;
+        }
+        @media (min-width: 992px) { 
+            .workspace { flex-direction: row; } 
+        }
+
+        /* Sidebar Glass Panel */
+        .sidebar { 
+            width: 100%; 
+            max-height: 35vh; 
+            background: var(--panel-bg); 
+            backdrop-filter: blur(20px);
+            border-right: 1px solid var(--panel-border); 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden; 
+            border-bottom: 1px solid var(--panel-border); 
+            box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+            transition: all 0.3s;
+        }
+        @media (min-width: 992px) { 
+            .sidebar { 
+                width: 320px; 
+                max-height: none; 
+                max-width: 420px; 
+                border-bottom: none; 
+            } 
+        }
+        
+        .sidebar-header { 
+            padding: 16px 20px; 
+            font-weight: 700; 
+            border-bottom: 1px solid var(--panel-border); 
+            color: var(--text-main); 
+            font-size: 11px; 
+            text-transform: uppercase; 
+            letter-spacing: 1.5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .status-panel { 
+            padding: 20px; 
+            font-size: 13px; 
+            color: var(--text-muted); 
+            display: flex; 
+            flex-direction: column; 
+            gap: 12px; 
+            border-bottom: 1px solid var(--panel-border); 
+            background: rgba(0, 0, 0, 0.15);
+        }
+
+        .progress-bar-container { 
+            width: 100%; 
+            height: 6px; 
+            background: rgba(255, 255, 255, 0.05); 
+            border-radius: 3px; 
+            overflow: hidden; 
+            margin-top: 4px; 
+            display: none; 
+            position: relative;
+        }
+        .progress-bar { 
+            height: 100%; 
+            background: var(--accent-gradient); 
+            width: 0%; 
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+        }
+
+        .pdf-list-panel {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--panel-border);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .pdf-list-title {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+        }
+        .pdf-items {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 120px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+        .pdf-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-main);
+            padding: 4px 6px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--panel-border);
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .history-list { 
+            flex-grow: 1; 
+            overflow-y: auto; 
+            padding: 16px; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 12px; 
+        }
+        .history-item { 
+            background: rgba(255, 255, 255, 0.02); 
+            border: 1px solid var(--panel-border); 
+            border-radius: 8px; 
+            padding: 14px; 
+            font-size: 12px; 
+            transition: all 0.2s;
+        }
+        .history-item:hover {
+            border-color: rgba(59, 130, 246, 0.25);
+            background: rgba(59, 130, 246, 0.02);
+        }
+        .history-q { 
+            font-weight: 700; 
+            color: var(--accent); 
+            margin-bottom: 6px; 
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .history-a { 
+            color: var(--text-muted); 
+            display: -webkit-box; 
+            -webkit-line-clamp: 3; 
+            line-clamp: 3; 
+            -webkit-box-orient: vertical; 
+            overflow: hidden; 
+            line-height: 1.5;
+        }
+
+        /* Chat Area Panel */
+        .chat-area { 
+            flex-grow: 1; 
+            display: flex; 
+            flex-direction: column; 
+            background: transparent; 
+            position: relative;
+        }
+        .messages { 
+            flex-grow: 1; 
+            overflow-y: auto; 
+            padding: 24px; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 24px; 
+            scroll-behavior: smooth;
+        }
+        
+        .msg-container { 
+            max-width: 850px; 
+            width: 100%; 
+            margin: 0 auto; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 8px; 
+        }
+        .msg-q { 
+            align-self: flex-end; 
+            background: var(--accent-gradient); 
+            color: white; 
+            padding: 12px 18px; 
+            border-radius: 16px 16px 0 16px; 
+            display: inline-block; 
+            max-width: 80%; 
+            line-height: 1.5; 
+            word-wrap: break-word; 
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.25);
+            font-size: 15px;
+            font-weight: 500;
+        }
+        .msg-a { 
+            align-self: flex-start; 
+            background: var(--panel-bg); 
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--panel-border); 
+            padding: 18px; 
+            border-radius: 16px 16px 16px 0; 
+            max-width: 90%; 
+            line-height: 1.6; 
+            white-space: pre-wrap; 
+            word-wrap: break-word; 
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+            font-size: 15px;
+        }
+
+        /* Context Images Layout */
+        .context-images { 
+            display: flex; 
+            flex-wrap: wrap; 
+            gap: 12px; 
+            margin-bottom: 12px; 
+        }
+        .context-img-wrapper {
+            position: relative;
+            cursor: pointer;
+            overflow: hidden;
+            border-radius: 8px;
+            border: 1px solid var(--panel-border);
+            background: #fff;
+            max-height: 220px;
+            transition: all 0.25s;
+        }
+        .context-img-wrapper:hover {
+            transform: scale(1.02);
+            border-color: var(--accent);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+        .context-img { 
+            max-height: 218px; 
+            display: block;
+            object-fit: contain;
+        }
+
+        /* Input Controls Panel */
+        .input-panel { 
+            padding: 20px; 
+            background: rgba(8, 12, 28, 0.85); 
+            backdrop-filter: blur(12px);
+            border-top: 1px solid var(--panel-border); 
+            box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.3);
+        }
+        .input-box { 
+            max-width: 850px; 
+            margin: 0 auto; 
+            display: flex; 
+            gap: 12px; 
+            background: rgba(255, 255, 255, 0.02); 
+            border: 1px solid var(--panel-border); 
+            border-radius: 14px; 
+            padding: 8px 12px; 
+            align-items: center;
+            transition: all 0.3s;
+        }
+        .input-box:focus-within {
+            border-color: rgba(59, 130, 246, 0.5);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.15);
+            background: rgba(255, 255, 255, 0.04);
+        }
+        .input-box textarea { 
+            flex-grow: 1; 
+            background: transparent; 
+            border: none; 
+            color: var(--text-main); 
+            resize: none; 
+            outline: none; 
+            font-size: 15px; 
+            line-height: 1.5; 
+            height: 40px; 
+            padding: 8px 4px; 
+        }
+
+        /* Audio Microphone / Speaker Buttons */
+        .btn-audio { 
+            background: rgba(255, 255, 255, 0.03); 
+            color: var(--text-muted); 
+            border: 1px solid var(--panel-border); 
+            border-radius: 10px; 
+            cursor: pointer; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            width: 40px; 
+            height: 40px; 
+            transition: all 0.25s; 
+            font-size: 16px; 
+        }
+        .btn-audio:hover { 
+            background: rgba(255, 255, 255, 0.08); 
+            color: var(--text-main);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+        .btn-audio.active-speaker {
+            color: var(--success);
+            border-color: rgba(16, 185, 129, 0.3);
+            background: rgba(16, 185, 129, 0.08);
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.15);
+        }
+        .btn-audio.recording { 
+            background: rgba(239, 68, 68, 0.15); 
+            border-color: var(--danger); 
+            animation: pulse-mic 1.6s infinite; 
+            color: var(--danger); 
+        }
+        @keyframes pulse-mic { 
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); } 
+            70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } 
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } 
+        }
+
+        /* Typing Dots Indicator */
+        .typing-indicator { 
+            display: inline-flex; 
+            align-items: center; 
+            gap: 4px; 
+            padding: 4px 8px; 
+        }
+        .typing-indicator span { 
+            display: block; 
+            width: 6px; 
+            height: 6px; 
+            background-color: var(--text-muted); 
+            border-radius: 50%; 
+            opacity: 0.6; 
+            animation: bounce 1.4s infinite ease-in-out both; 
+        }
+        .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce { 
+            0%, 80%, 100% { transform: scale(0); opacity: 0.3; } 
+            40% { transform: scale(1); opacity: 1; } 
+        }
+
+        /* Modal Preview */
+        .image-modal {
+            display: none;
+            position: fixed;
+            z-index: 100;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: rgba(2, 3, 8, 0.95);
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(15px);
+        }
+        .image-modal-content {
+            max-width: 90%;
+            max-height: 85%;
+            border-radius: 12px;
+            border: 1px solid var(--panel-border);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+            background: #ffffff;
+        }
+        .image-modal-close {
+            position: absolute;
+            top: 24px; right: 24px;
+            font-size: 32px;
+            cursor: pointer;
+            color: var(--text-muted);
+            transition: color 0.2s;
+        }
+        .image-modal-close:hover {
+            color: #ffffff;
+        }
+
+        /* Sources Footnote Styling */
+        .sources-footnote {
+            margin-top: 14px;
+            padding-top: 10px;
+            border-top: 1px dashed var(--panel-border);
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+        .sources-footnote strong {
+            color: var(--accent);
+        }
+
+        /* Visual Figure Card Styling */
+        .visual-figures-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
+        .visual-figure-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            transition: all 0.25s ease;
+        }
+        .visual-figure-card:hover {
+            border-color: rgba(59, 130, 246, 0.2);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+        /* Config Form Modals */
+        .form-modal-backdrop {
+            display: none;
+            position: fixed;
+            z-index: 200;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: rgba(2, 3, 8, 0.85);
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(10px);
+        }
+        .form-modal-card {
+            background: rgba(13, 20, 38, 0.95);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 520px;
+            padding: 28px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .form-modal-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .form-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-main);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .form-input {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: #ffffff;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s;
+        }
+        .form-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
+        }
+        .form-help {
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+        .form-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header bar -->
+    <div class="topbar">
+        <div class="logo-section">
+            <span class="logo-icon">⚡</span>
+            <span class="logo-title">PdfLrt</span>
+        </div>
+        
+        <!-- Ingestion Section -->
+        <div style="display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.03); padding: 4px 8px; border-radius: 10px; border: 1px solid var(--panel-border);">
+            <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">PDF Dir:</span>
+            <input type="text" id="pdf-path-input" style="width: 190px; background: rgba(30, 41, 59, 0.7); border: 1px solid var(--panel-border); font-size: 12px; color: #ffffff; border-radius: 6px; padding: 6px 8px; outline: none;" placeholder="e.g. /home/juan/Data/FAA" value="/home/juan/Data/FAA" title="Directory containing PDF manuals to ingest">
+            
+            <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Output:</span>
+            <input type="text" id="kb-output-path-input" style="width: 150px; background: rgba(30, 41, 59, 0.7); border: 1px solid var(--panel-border); font-size: 12px; color: #ffffff; border-radius: 6px; padding: 6px 8px; outline: none;" placeholder="(Optional)" value="" title="Optional custom directory for KB output. Saves to ./KB subfolder.">
+            
+            <button class="btn btn-primary" id="btn-sync-kb" style="padding: 6px 14px; font-size: 12px;" title="Ingest PDF files from specified directory">
+                🔄 Sync KB
+            </button>
+        </div>
+
+        <!-- Model Loading Section -->
+        <div style="display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.03); padding: 4px 8px; border-radius: 10px; border: 1px solid var(--panel-border);">
+            <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">KB Path:</span>
+            <input type="text" id="kb-load-path-input" style="width: 190px; background: rgba(30, 41, 59, 0.7); border: 1px solid var(--panel-border); font-size: 12px; color: #ffffff; border-radius: 6px; padding: 6px 8px; outline: none;" placeholder="e.g. /home/juan/Data/FAA/KB" value="/home/juan/Data/FAA/KB" title="Location of knowledge_base.json and figures">
+
+            <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Model:</span>
+            <input type="text" id="model-path-input" style="width: 200px; background: rgba(30, 41, 59, 0.7); border: 1px solid var(--panel-border); font-size: 12px; color: #ffffff; border-radius: 6px; padding: 6px 8px; outline: none;" placeholder="/models/gemma-4-E2B-it-web.task" value="/models/gemma-4-E2B-it-web.task" title="Path to LiteRT task or bin model file">
+
+            <select id="device-select" style="background: rgba(30, 41, 59, 0.7); border: 1px solid var(--panel-border); font-size:11px; color: var(--text-main); border-radius: 6px; cursor: pointer; height: 28px; padding: 2px 6px;">
+                <option value="webgpu">GPU</option>
+                <option value="wasm">CPU</option>
+            </select>
+
+            <button class="btn" id="btn-load-model" style="background: var(--accent-gradient); border-color: transparent; padding: 6px 14px; font-size: 12px;" title="Load selected model & knowledge base">
+                🚀 Load Model
+            </button>
+        </div>
+
+        <!-- Quick Actions -->
+        <div style="display:flex; align-items:center; gap: 6px;">
+            <button class="btn" id="btn-save-dialog" title="Save session dialog to Excel file">💾 Save</button>
+            <button class="btn" id="btn-batch-questions" title="Run questions from an Excel file sequentially">📑 Batch</button>
+            <button class="btn" id="btn-clear-dialog">🧹 Clear</button>
+            <button class="btn btn-danger" id="btn-stop-server">🛑 Stop</button>
+            <span id="model-status" style="font-size:12px; color: var(--success); background: rgba(16, 185, 129, 0.08); padding: 6px 14px; border-radius: 20px; border: 1px solid rgba(16, 185, 129, 0.2)">
+                ● Server Connected
+            </span>
+        </div>
+    </div>
+
+    <!-- Main Section -->
+    <div class="workspace">
+        <!-- Sidebar Panel -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <span>System Status</span>
+                <span id="status-badge" style="font-size:10px; color: var(--accent);">Active</span>
+            </div>
+            
+            <div class="status-panel">
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 600; color: var(--text-main);">Database:</span>
+                        <span id="status-db-text" style="color: var(--warning);">Checking...</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 600; color: var(--text-main);">LiteRT Engine:</span>
+                        <span id="status-model-text" style="color: var(--text-muted);">Initializing...</span>
+                    </div>
+                </div>
+                <div class="progress-bar-container" id="progress-container">
+                    <div class="progress-bar" id="progress-bar"></div>
+                </div>
+                <div style="font-size: 11px; margin-top: 4px; display: flex; flex-direction: column; gap: 4px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+                    <div id="status-loaded-chunks">Chunks Loaded: 0</div>
+                    <div id="status-loaded-figures">Figures Extracted: 0</div>
+                </div>
+            </div>
+
+            <!-- PDF Files Ingested Panel -->
+            <div class="pdf-list-panel">
+                <div class="pdf-list-title" id="pdf-list-title">PDF Source Files</div>
+                <div class="pdf-items" id="pdf-items-container">
+                    <div style="color: var(--text-muted); font-style: italic;">No PDF files found.</div>
+                </div>
+            </div>
+
+            <div class="sidebar-header">
+                <span>Context Snippets (RAG)</span>
+            </div>
+            <div class="history-list" id="history-container">
+                <!-- Retrieved snippets will appear here dynamically -->
+            </div>
+        </div>
+
+        <!-- Chat Area -->
+        <div class="chat-area">
+            <div class="messages" id="chat-container">
+                <div class="msg-container">
+                    <div class="msg-a">Welcome to **PdfLrt** Offline Mobile RAG Assistant! 🚀<br><br>This application runs entirely on-device using Google's **LiteRT** inference engines for text generation, and local embeddings for document retrieval. This guarantees 100% functionality without WiFi.<br><br>Put your PDF files in the `./PdfDir` folder, click **Sync Knowledge Base** to process them and compute embeddings. When the LiteRT model loads, you can start asking questions! Toggle 🎤 for voice typing and 🔊 for text-to-speech feedback.</div>
+                </div>
+            </div>
+
+            <!-- Input area -->
+            <div class="input-panel">
+                <div class="input-box">
+                    <textarea id="question" placeholder="Ask a question about the PDF manuals..."></textarea>
+                    <button class="btn-audio" id="btn-mic" title="Toggle Voice Recognition (Microphone)">🎤</button>
+                    <button class="btn-audio" id="btn-speaker" title="Toggle Auto Read-aloud (Speaker)">🔊</button>
+                    <button class="btn btn-primary" id="btn-send" style="height: 40px; border-radius: 10px;">Send ✈️</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image modal zoom -->
+    <div class="image-modal" id="image-modal">
+        <span class="image-modal-close" id="image-modal-close">&times;</span>
+        <img class="image-modal-content" id="image-modal-img" src="">
+    </div>
+
+    <!-- Sync Knowledge Base Modal -->
+    <div class="form-modal-backdrop" id="sync-modal">
+        <div class="form-modal-card">
+            <div class="form-modal-title">
+                <span>🔄 Synchronize Knowledge Base</span>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="modal-sync-pdf-dir">PDF Source Directory</label>
+                <input type="text" id="modal-sync-pdf-dir" class="form-input" placeholder="e.g. /home/juan/Data/FAA/" value="/home/juan/Data/FAA/">
+                <span class="form-help">Specify the directory on your host machine where PDF manuals are located.</span>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="modal-sync-kb-dir">Knowledge Base Output Directory (Optional)</label>
+                <input type="text" id="modal-sync-kb-dir" class="form-input" placeholder="Optional (defaults to PDF Source Directory)" value="">
+                <span class="form-help">Destination folder. The ingestion will save files inside a subfolder named <code>kb</code> (e.g. <code>/home/juan/Data/FAA/kb/</code>).</span>
+            </div>
+            <div class="form-actions">
+                <button class="btn" id="btn-cancel-sync">Cancel</button>
+                <button class="btn btn-primary" id="btn-confirm-sync">🚀 Start Ingestion & Sync</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load Model & KB Modal -->
+    <div class="form-modal-backdrop" id="load-modal">
+        <div class="form-modal-card">
+            <div class="form-modal-title">
+                <span>🚀 Load LiteRT Model & Knowledge Base</span>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="modal-load-model-path">LiteRT Task Model Path</label>
+                <input type="text" id="modal-load-model-path" class="form-input" placeholder="e.g. /models/gemma-4-E2B-it-web.task" value="/models/gemma-4-E2B-it-web.task">
+                <span class="form-help">Path to the on-device LiteRT model file (.task or .bin).</span>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="modal-load-kb-path">Knowledge Base Location</label>
+                <input type="text" id="modal-load-kb-path" class="form-input" placeholder="e.g. /home/juan/Data/FAA/KB" value="/home/juan/Data/FAA/KB">
+                <span class="form-help">Directory containing <code>knowledge_base.json</code> and the <code>figures</code> subfolder.</span>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="modal-load-device">Inference Hardware Delegate</label>
+                <select id="modal-load-device" class="form-input" style="cursor: pointer;">
+                    <option value="webgpu">LiteRT WebGPU (GPU Acceleration)</option>
+                    <option value="wasm">LiteRT WASM (CPU Fallback)</option>
+                </select>
+            </div>
+            <div class="form-actions">
+                <button class="btn" id="btn-cancel-load">Cancel</button>
+                <button class="btn btn-primary" id="btn-confirm-load">🚀 Load Model & KB</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Unregister legacy PWA Service Worker to ensure fresh code loading -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                for (let registration of registrations) {
+                    registration.unregister();
+                }
+            });
+        }
+        
+        window.addEventListener('error', function(event) {
+            console.error("Client Error Captured:", event);
+            showGlobalError("Browser Error: " + event.message);
+        });
+        window.addEventListener('unhandledrejection', function(event) {
+            console.error("Unhandled Rejection:", event.reason);
+            showGlobalError("Promise Error: " + (event.reason ? event.reason.message || event.reason : "Unknown rejection"));
+        });
+        
+        function showGlobalError(msg) {
+            const errorDiv = document.createElement('div');
+            errorDiv.style.position = 'fixed';
+            errorDiv.style.top = '20px';
+            errorDiv.style.left = '50%';
+            errorDiv.style.transform = 'translateX(-50%)';
+            errorDiv.style.background = 'rgba(239, 68, 68, 0.95)';
+            errorDiv.style.color = '#fff';
+            errorDiv.style.padding = '12px 24px';
+            errorDiv.style.borderRadius = '8px';
+            errorDiv.style.zIndex = '9999';
+            errorDiv.style.boxShadow = '0 4px 20px rgba(0,0,0,0.5)';
+            errorDiv.style.fontSize = '14px';
+            errorDiv.style.fontWeight = '600';
+            errorDiv.innerHTML = '⚠️ ' + msg;
+            document.body.appendChild(errorDiv);
+            setTimeout(() => errorDiv.remove(), 8000);
+        }
+        window.showGlobalError = showGlobalError;
+    </script>
+    
+    <script type="module" src="app.js?v=500"></script>
+</body>
+</html>
