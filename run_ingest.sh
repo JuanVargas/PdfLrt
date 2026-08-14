@@ -18,7 +18,9 @@ fi
 RAW_PDF_DIR="${RAW_PDF_DIR:-./PdfDir}"
 
 if [ -z "$RAW_OUTPUT_DIR" ]; then
-    read -rp "Enter output path for Knowledge Base [default: $RAW_PDF_DIR]: " RAW_OUTPUT_DIR
+    if [ -z "$1" ]; then
+        read -rp "Enter output path for Knowledge Base [default: $RAW_PDF_DIR]: " RAW_OUTPUT_DIR
+    fi
 fi
 
 RAW_OUTPUT_DIR="${RAW_OUTPUT_DIR:-$RAW_PDF_DIR}"
@@ -50,6 +52,16 @@ else
     python3 "$SCRIPT_DIR/build_knowledge_base.py" --pdf-dir "$ABS_PDF_DIR" --output-dir "$ABS_OUTPUT_DIR"
 fi
 
+if [ "$ABS_OUTPUT_DIR" != "$SCRIPT_DIR/PdfDir" ]; then
+    echo "🔄 Syncing generated KB to local project PdfDir..."
+    mkdir -p "$SCRIPT_DIR/PdfDir/KB"
+    if [ -f "$ABS_OUTPUT_DIR/KB/knowledge_base.json" ]; then
+        cp "$ABS_OUTPUT_DIR/KB/knowledge_base.json" "$SCRIPT_DIR/PdfDir/KB/knowledge_base.json"
+    fi
+    if [ -d "$ABS_OUTPUT_DIR/KB/figures" ]; then
+        mkdir -p "$SCRIPT_DIR/PdfDir/KB/figures"
+        cp -r "$ABS_OUTPUT_DIR/KB/figures/"* "$SCRIPT_DIR/PdfDir/KB/figures/" 2>/dev/null || true
+    fi
+fi
+
 echo "✅ PDF Pre-processing and embedding generation complete!"
-
-

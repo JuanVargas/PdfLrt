@@ -237,6 +237,18 @@ def process_pdfs(pdf_dir_arg=None, output_dir_arg=None):
     print(f"\nKnowledge base saved to {output_file}")
     print(f"Extracted {len(kb['chunks'])} text chunks (with embeddings) and {len(kb['figures'])} visual assets.")
 
+    # Also save a copy to the default local PdfDir/KB if target_parent is elsewhere
+    default_kb_dir = os.path.join(BASE_DIR, "PdfDir", "KB")
+    if os.path.abspath(kb_dir) != os.path.abspath(default_kb_dir):
+        try:
+            os.makedirs(default_kb_dir, exist_ok=True)
+            alt_output = os.path.join(default_kb_dir, "knowledge_base.json")
+            with open(alt_output, "w", encoding="utf-8") as f:
+                json.dump(kb, f)
+            print(f"Compatibility knowledge base copy saved to {alt_output}")
+        except Exception as e:
+            print(f"Warning: Failed to write compatibility copy: {e}")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build Knowledge Base from PDFs for PdfLrt")
     parser.add_argument("--pdf-dir", "-p", type=str, default=None, help="Directory containing PDF files")

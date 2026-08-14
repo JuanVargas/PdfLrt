@@ -1,22 +1,18 @@
 # Saving or Updating Repo on Github
 
-under the VSC terminal:
+For the first time:
 
 git init
 git branch -M main
 git add .
 git commit -m "Initial commit of Name"
-Select Commit in the Changes section of Source Control
-Click the Publish to Github btn
-
-Issue commit and commit and push
+git push origin main
 
 Verify that repo is in Github
 
+To update the repo:
 
-Once the repo is in Github, use these commands to update
-
+git status
 git add .
 git commit -m "Describe your changes here"
-git push
-
+git push origin main

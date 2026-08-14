@@ -8,30 +8,47 @@ REM Determine script directory
 set "SCRIPT_DIR=%~dp0"
 if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 
-set PDF_DIR=%~1
-set OUTPUT_DIR=%~2
+set "RAW_PDF_DIR=%~1"
+set "RAW_OUTPUT_DIR=%~2"
 
-if "%PDF_DIR%"=="" (
+REM If run interactively without arguments, prompt for inputs
+if "%RAW_PDF_DIR%"=="" (
     echo =======================================================================
     echo 📂 PdfLrt Knowledge Base Ingestion Setup
     echo =======================================================================
-    set /p "PDF_DIR=Enter path to PDF folder [default: .\PdfDir]: "
+    set /p "RAW_PDF_DIR=Enter path to PDF folder [default: .\PdfDir]: "
 )
 
-if "%PDF_DIR%"=="" set PDF_DIR=.\PdfDir
+if "%RAW_PDF_DIR%"=="" set "RAW_PDF_DIR=.\PdfDir"
 
-if "%OUTPUT_DIR%"=="" (
-    set /p "OUTPUT_DIR=Enter output path for Knowledge Base [default: %PDF_DIR%]: "
+if "%RAW_OUTPUT_DIR%"=="" (
+    if "%~1"=="" (
+        set /p "RAW_OUTPUT_DIR=Enter output path for Knowledge Base [default: %RAW_PDF_DIR%]: "
+    )
 )
 
-if "%OUTPUT_DIR%"=="" set OUTPUT_DIR=%PDF_DIR%
+if "%RAW_OUTPUT_DIR%"=="" set "RAW_OUTPUT_DIR=%RAW_PDF_DIR%"
 
-REM Resolve paths to full absolute paths for Docker mounting
-for %%I in ("%PDF_DIR%") do set "ABS_PDF_DIR=%%~fI"
-for %%I in ("%OUTPUT_DIR%") do set "ABS_OUTPUT_DIR=%%~fI"
+REM Normalize PDF_DIR: convert slashes and handle drive-relative paths (\Users... or /Users...)
+set "NORM_PDF_DIR=%RAW_PDF_DIR:/=\%"
+if "%NORM_PDF_DIR:~0,1%"=="\" (
+    if not "%NORM_PDF_DIR:~1,1%"=="\" (
+        set "NORM_PDF_DIR=%SystemDrive%%NORM_PDF_DIR%"
+    )
+)
+for %%I in ("%NORM_PDF_DIR%") do set "ABS_PDF_DIR=%%~fI"
 
-echo 📂 PDF Input Directory: %ABS_PDF_DIR%
-echo 📂 KB Output Directory: %ABS_OUTPUT_DIR%
+REM Normalize OUTPUT_DIR: convert slashes and handle drive-relative paths
+set "NORM_OUTPUT_DIR=%RAW_OUTPUT_DIR:/=\%"
+if "%NORM_OUTPUT_DIR:~0,1%"=="\" (
+    if not "%NORM_OUTPUT_DIR:~1,1%"=="\" (
+        set "NORM_OUTPUT_DIR=%SystemDrive%%NORM_OUTPUT_DIR%"
+    )
+)
+for %%I in ("%NORM_OUTPUT_DIR%") do set "ABS_OUTPUT_DIR=%%~fI"
+
+echo 📂 PDF Input Directory: "%ABS_PDF_DIR%"
+echo 📂 KB Output Directory: "%ABS_OUTPUT_DIR%"
 
 if not exist "%ABS_PDF_DIR%" mkdir "%ABS_PDF_DIR%"
 if not exist "%ABS_OUTPUT_DIR%" mkdir "%ABS_OUTPUT_DIR%"
@@ -64,6 +81,16 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 
+REM If ABS_OUTPUT_DIR is outside local project PdfDir, copy output files for local server compatibility
+if /i not "%ABS_OUTPUT_DIR%"=="%SCRIPT_DIR%\PdfDir" (
+    echo 🔄 Syncing generated KB to local project PdfDir...
+    if not exist "%SCRIPT_DIR%\PdfDir\KB" mkdir "%SCRIPT_DIR%\PdfDir\KB"
+    if exist "%ABS_OUTPUT_DIR%\KB\knowledge_base.json" (
+        copy /y "%ABS_OUTPUT_DIR%\KB\knowledge_base.json" "%SCRIPT_DIR%\PdfDir\KB\knowledge_base.json" >nul
+    )
+    if exist "%ABS_OUTPUT_DIR%\KB\figures" (
+        xcopy /s /y /i "%ABS_OUTPUT_DIR%\KB\figures" "%SCRIPT_DIR%\PdfDir\KB\figures" >nul
+    )
+)
+
 echo ✅ PDF Pre-processing and embedding generation complete!
-
-
