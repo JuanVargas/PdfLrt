@@ -54,9 +54,10 @@ if not exist "%ABS_PDF_DIR%" mkdir "%ABS_PDF_DIR%"
 if not exist "%ABS_OUTPUT_DIR%" mkdir "%ABS_OUTPUT_DIR%"
 if not exist "%USERPROFILE%\.cache\huggingface" mkdir "%USERPROFILE%\.cache\huggingface"
 
-docker --version >nul 2>&1
+REM Check if Docker Desktop daemon is actually running
+docker info >nul 2>&1
 if %errorlevel% equ 0 (
-    echo 🐳 Building/Verifying the PdfLrt Ingestion Docker Image...
+    echo 🐳 Docker daemon active. Building/Verifying the PdfLrt Ingestion Docker Image...
     docker build -t pdflrt-ingest -f "%SCRIPT_DIR%\Dockerfile" "%SCRIPT_DIR%"
     if %errorlevel% neq 0 (
         echo ❌ Docker build failed!
@@ -72,8 +73,18 @@ if %errorlevel% equ 0 (
       -w /app ^
       pdflrt-ingest python3 build_knowledge_base.py --pdf-dir /pdf_input --output-dir /output_dir
 ) else (
-    echo ⚠️ Docker not detected. Running local Python build script...
-    python "%SCRIPT_DIR%\build_knowledge_base.py" --pdf-dir "%ABS_PDF_DIR%" --output-dir "%ABS_OUTPUT_DIR%"
+    echo ⚠️ Docker Desktop daemon is not running or responsive. Checking for local Python...
+    python --version >nul 2>&1
+    if %errorlevel% equ 0 (
+        echo 🐍 Falling back to local Python ingestion execution...
+        python "%SCRIPT_DIR%\build_knowledge_base.py" --pdf-dir "%ABS_PDF_DIR%" --output-dir "%ABS_OUTPUT_DIR%"
+    ) else (
+        echo ❌ Error: Docker daemon is not running AND Python is not available in PATH!
+        echo 💡 Fix options:
+        echo    1) Start Docker Desktop on Windows.
+        echo    2) OR install Python and dependencies: pip install PyMuPDF sentence-transformers
+        exit /b 1
+    )
 )
 
 if %errorlevel% neq 0 (

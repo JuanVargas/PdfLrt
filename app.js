@@ -826,7 +826,10 @@ btnSyncKb.addEventListener('click', async () => {
     btnSyncKb.disabled = true;
     btnSyncKb.innerHTML = "⏳ Syncing...";
     
-    const targetOutputDisplay = kbDir ? `${kbDir.replace(/\/+$/, '')}/KB/` : `${pdfDir.replace(/\/+$/, '')}/KB/`;
+    const isWinPath = /^[a-zA-Z]:[\\\/]/.test(pdfDir || kbDir) || (pdfDir || kbDir).includes('\\');
+    const sep = isWinPath ? '\\' : '/';
+    let baseDir = (kbDir || pdfDir).replace(/[\\\/]+$/, '');
+    const targetOutputDisplay = (baseDir.endsWith(`${sep}KB`) || baseDir.endsWith(`${sep}kb`)) ? `${baseDir}${sep}` : `${baseDir}${sep}KB${sep}`;
     appendMessage(false, `🔄 **System**: Sync started. Ingesting PDF manuals from \`${pdfDir}\` and computing local vector embeddings. Target output directory: \`${targetOutputDisplay}\`. Please wait...`, [], "SYSTEM");
     
     try {
